@@ -1,65 +1,153 @@
-import Image from "next/image";
+"use client";
+
+import { motion, AnimatePresence, useMotionValue, useTransform, animate as mAnimate } from "framer-motion";
+import { createPortal } from 'react-dom';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation'; // 1. เพิ่ม import useRouter
+import Login from '../compunets/login';
+import Register from '../compunets/register';
 
 export default function Home() {
+  const router = useRouter(); // 2. เรียกใช้ hook useRouter
+  const [modalOpen, setModalOpen] = useState(false);
+  const [isRegisterModal, setIsRegisterModal] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ username: string } | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+      setIsLoggedIn(true);
+      router.push('/');
+    }
+  }, [router]);
+
+  const handleStartClick = () => {
+    if (isLoggedIn) {
+      router.push('pages/schedule'); 
+    } else {
+      setModalOpen(true);
+      setIsRegisterModal(false);
+    }
+  };
+
+  const handleToggleModal = () => {
+    if (modalOpen) {
+      setIsClosing(true);
+      try { mAnimate(flip, 0, { duration: 0.45, ease: [0.25, 0.8, 0.25, 1] }); } catch {}
+      setTimeout(() => {
+        setModalOpen(false);
+        setIsRegisterModal(false);
+        setIsClosing(false);
+      }, 350);
+      return;
+    }
+    setModalOpen(true);
+    setIsRegisterModal(false);
+  };
+
+  const flip = useMotionValue(0);
+  const rotateY = useTransform(flip, (v) => `${v * 180}deg`);
+  const frontOpacity = useTransform(flip, [0, 0.45, 0.55, 1], [1, 1, 0, 0]);
+  const backOpacity = useTransform(flip, [0, 0.45, 0.55, 1], [0, 0, 1, 1]);
+  const translateX = useTransform(flip, [0, 0.5, 1], ['0px', '10px', '0px']);
+
+  useEffect(() => {
+    mAnimate(flip, isRegisterModal ? 1 : 0, { duration: 0.7, ease: [0.25, 0.8, 0.25, 1] });
+  }, [isRegisterModal]);
+
+  const Portal = ({ children }: { children: React.ReactNode }) => {
+    if (typeof document === 'undefined') return null;
+    return createPortal(children, document.body);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-blue-200 text-center px-6 overflow-hidden">
+      <motion.h1
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.2, delay: 0.3 }}
+        className="text-3xl md:text-4xl font-bold text-blue-700 mb-6"
+      >
+        ระบบจัดตารางเรียนออนไลน์
+      </motion.h1>
+
+      <motion.p
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 1.0, delay: 0.6 }}
+        className="text-gray-600 max-w-lg mb-8"
+      >
+        วางแผนตารางเรียนของคุณอย่างมีประสิทธิภาพ —  
+        สร้าง แก้ไข และจัดการตารางได้ง่ายในไม่กี่คลิก
+      </motion.p>
+
+      <div className="flex space-x-4">
+        <motion.button
+          onClick={handleStartClick}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.9 }}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl text-lg shadow-md"
+        >
+          เริ่มจัดตารางเรียน
+        </motion.button>
+      </div>
+
+      <Portal>
+        <AnimatePresence>
+          {modalOpen && (
+            <motion.div
+              key="modal"
+              initial={{ opacity: 0 }}
+              animate={isClosing ? { opacity: 0 } : { opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm"
+              onClick={handleToggleModal}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+              <motion.div
+                onClick={(e) => e.stopPropagation()}
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 25 }}
+                className="relative w-[400px] h-[450px]"
+                style={{ perspective: 1000 }}
+              >
+                <motion.div
+                  style={{ rotateY, transformStyle: 'preserve-3d', transformOrigin: 'center center', x: translateX }}
+                  className="relative w-full h-full will-change-transform"
+                >
+                  <motion.div
+                    className="absolute w-full h-full"
+                    style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(0deg)', opacity: frontOpacity }}
+                  >
+                    <Login
+                      setIsRegister={(v: boolean) => setIsRegisterModal(Boolean(v))}
+                      onLoginSuccess={(u: { username: string }) => {
+                        setCurrentUser({ username: u.username });
+                        setIsLoggedIn(true);
+                        setModalOpen(false);
+                        try { localStorage.setItem('user', JSON.stringify({ username: u.username })); } catch {}
+                      }}
+                      setIsOpen={setModalOpen}
+                    />
+                  </motion.div>
+
+                  <motion.div
+                    className="absolute w-full h-full"
+                    style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', opacity: backOpacity }}
+                  >
+                    <Register setIsRegister={setIsRegisterModal} />
+                  </motion.div>
+                </motion.div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Portal>
+    </main>
   );
 }

@@ -1,0 +1,40 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  // Connection URL moved to `prisma/prisma.config.ts` (Prisma v7+)
+  // For local development create `prisma/prisma.config.ts` and define the datasource URL there.
+}
+
+model User {
+  id           Int         @id @default(autoincrement())
+  username     String
+  password     String
+  email        String      @unique
+  permissionId Int?
+  permission   Permission? @relation(fields: [permissionId], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Permission {
+  id         Int      @id @default(autoincrement())
+  name       String   @unique
+  allowPages Json // Array of allowed route paths, e.g., ["/dashboard", "/schedule", "/help"]
+  users      User[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+//npx prisma generate สำหรับรีฐานช้อมูล
+//npx prisma studio   สำหรับเปิดฐานข้อมูล
+//npx prisma db push  สำหรับsync schema กับฐานข้อมูล
