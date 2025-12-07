@@ -11,6 +11,7 @@ interface SchoolTabProps {
   isEditingHeader: string | null;
   editingHeaderKey: number | null;
   updatePeriodConfig: (periodId: number, config: PeriodConfig) => void;
+  onClose: () => void;
   PERIODS: {
     id: number;
     name: string;

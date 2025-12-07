@@ -77,6 +77,13 @@ export default function SchedulePage() {
     name: null
   });
 
+    // ฟังก์ชันเปิด Modal จาก Navbar
+  const openNavbarModal = (tab: 'subject' | 'teacher' | 'school' | 'room') => {
+    setIsEditingHeader('day');
+    setEditingHeaderKey('navbar');
+    setActiveTab(tab);
+  };
+
   // ดึงข้อมูลห้องทั้งหมด (ต้องประกาศก่อน useEffect)
   const allRooms = getAllRooms();
 
@@ -111,38 +118,8 @@ export default function SchedulePage() {
   const DAYS = activeSheet.dayConfigs || [];
   const PERIODS = activeSheet.periodConfigs || [];
 
-  // ถ้ายังไม่มีห้องเรียน ให้แสดงข้อความแทนตาราง
-  if (allRooms.length === 0) {
-    return (
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans ml-20 flex items-center justify-center"
-      >
-        <div className="text-center">
-          <motion.div
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.5 }}
-            className="bg-white p-8 rounded-xl shadow-lg"
-          >
-            <GraduationCap size={64} className="mx-auto mb-4 text-gray-400" />
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">ยังไม่มีห้องเรียน</h2>
-            <p className="text-gray-600 mb-6">กรุณาเพิ่มห้องเรียนก่อนเพื่อเริ่มใช้งานตารางเรียน</p>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => openNavbarModal('room')}
-              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-md font-medium flex items-center gap-2 mx-auto"
-            >
-              <GraduationCap size={20} />
-              เพิ่มห้องเรียน
-            </motion.button>
-          </motion.div>
-        </div>
-      </motion.div>
-    );
-  }
+  // NOTE: don't early-return when there are no rooms — keep rendering the
+  // page so modals (the Navbar modal) can open even when `allRooms` is empty.
 
   // ฟังก์ชันเปิด Modal แก้ไขช่องตาราง
   const openEdit = (day: string, period: number) => {
@@ -282,15 +259,8 @@ export default function SchedulePage() {
     updateTeacher({ ...teacher, availableRooms: newAvailableRooms });
   };
 
-  // ฟังก์ชันเปิด Modal จาก Navbar
-  const openNavbarModal = (tab: 'subject' | 'teacher' | 'school' | 'room') => {
-    setIsEditingHeader('day');
-    setEditingHeaderKey('navbar');
-    setActiveTab(tab);
-  };
-
   function generatePeriodConfigs(startTime: string, endTime: string, minutesPerPeriod: number) {
-    const configs = [];
+    const configs: { id: number; time: string; minutesPerPeriod: number }[] = [];
     if (!startTime || !endTime || !minutesPerPeriod) return configs;
     let id = 1;
     let [sh, sm] = startTime.split(':').map(Number);
@@ -420,15 +390,45 @@ export default function SchedulePage() {
         </div>
       </div>
 
-    <ScheduleTable
-      PERIODS={PERIODS}
-      DAYS={DAYS}
-      activeSheet={activeSheet}
-      openHeaderEdit={openHeaderEdit}
-      openEdit={openEdit}
-      containerVar={containerVar}
-      itemVar={itemVar}
-    />
+    {allRooms.length === 0 ? (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="min-h-[60vh] bg-gray-50 p-4 md:p-8 font-sans ml-20 flex items-center justify-center"
+      >
+        <div className="text-center w-full max-w-lg">
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.35 }}
+            className="bg-white p-8 rounded-xl shadow-lg"
+          >
+            <GraduationCap size={64} className="mx-auto mb-4 text-gray-400" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">ยังไม่มีห้องเรียน</h2>
+            <p className="text-gray-600 mb-6">กรุณาเพิ่มห้องเรียนก่อนเพื่อเริ่มใช้งานตารางเรียน</p>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => openNavbarModal('room')}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-md font-medium flex items-center gap-2 mx-auto"
+            >
+              <GraduationCap size={20} />
+              เพิ่มห้องเรียน
+            </motion.button>
+          </motion.div>
+        </div>
+      </motion.div>
+    ) : (
+      <ScheduleTable
+        PERIODS={PERIODS}
+        DAYS={DAYS}
+        activeSheet={activeSheet}
+        openHeaderEdit={openHeaderEdit}
+        openEdit={openEdit}
+        containerVar={containerVar}
+        itemVar={itemVar}
+      />
+    )}
 
 
 
@@ -565,7 +565,11 @@ export default function SchedulePage() {
                       (activeSheet.periodConfigs ?? []).map((p: PeriodConfig) => ({
                         id: p.id,
                         name: p.time ?? `Period ${p.id}`,
-                        minutesPerPeriod: p.minutesPerPeriod
+                        minutesPerPeriod: p.minutesPerPeriod,
+                        onClose: () => {
+                          setIsEditingHeader(null);
+                          setEditingHeaderKey(null);
+                        }
                       }))
                     }
                   />
