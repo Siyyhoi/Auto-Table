@@ -25,7 +25,7 @@ export default function Home() {
 
   const handleStartClick = () => {
     if (isLoggedIn) {
-      router.push('pages/schedule'); 
+      router.push('/schedule'); 
     } else {
       setModalOpen(true);
       setIsRegisterModal(false);

@@ -6,6 +6,7 @@ interface TeacherTabProps {
     rooms: Room[];
   };
   handleAddTeacher: () => void;
+  handleEditTeacher: (teacher: Teacher) => void;
   deleteTeacher: (id: string) => void;
   handleTeacherRoomToggle: (teacherId: string, roomId: string) => void;
 }
@@ -13,6 +14,7 @@ interface TeacherTabProps {
 export default function TeacherTab({
   activeSheet,
   handleAddTeacher,
+  handleEditTeacher,
   deleteTeacher,
   handleTeacherRoomToggle
 }: TeacherTabProps) {
@@ -34,14 +36,22 @@ export default function TeacherTab({
             <div className="flex justify-between items-center mb-2">
               <div className="font-bold text-lg text-black">{teacher.name}</div>
 
-              <button
-                onClick={() => {
-                  if (confirm('ลบอาจารย์นี้?')) deleteTeacher(teacher.id);
-                }}
-                className="text-black hover:text-gray-700"
-              >
-                ลบ
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleEditTeacher(teacher)}
+                  className="text-blue-600 hover:text-blue-700 font-medium"
+                  title="แก้ไข"
+                >
+                  แก้ไข
+                </button>
+                <button
+                  onClick={() => deleteTeacher(teacher.id)}
+                  className="text-red-600 hover:text-red-700 font-medium"
+                  title="ลบ"
+                >
+                  ลบ
+                </button>
+              </div>
             </div>
 
             <div className="mt-2">
@@ -67,6 +77,11 @@ export default function TeacherTab({
           </div>
         ))}
       </div>
+      {activeSheet.teachers.length === 0 && (
+        <div className="text-center py-8 text-gray-500">
+          ยังไม่มีอาจารย์ กรุณาเพิ่มอาจารย์
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,8 @@
  * Permission utilities for checking user access to pages
  */
 
+import { getPermissionKey, isProtectedPage } from './permission-config';
+
 /**
  * Routes that are accessible to all authenticated users (default access)
  */
@@ -18,7 +20,29 @@ export function hasPageAccess(allowedPages: string[], targetPage: string): boole
   if (DEFAULT_ACCESSIBLE_ROUTES.includes(targetPage)) return true;
   
   if (!allowedPages || !Array.isArray(allowedPages)) return false;
+  
+  // ตรวจสอบทั้ง path และ permission key
+  const permissionKey = getPermissionKey(targetPage);
+  if (permissionKey) {
+    // ตรวจสอบว่ามี permission key ใน allowedPages หรือไม่
+    return allowedPages.includes(targetPage) || allowedPages.includes(permissionKey);
+  }
+  
   return allowedPages.includes(targetPage);
+}
+
+/**
+ * Check if user has access to a protected page
+ * @param allowedPages - Array of allowed pages from user's permission
+ * @param pagePath - The page path to check
+ * @returns true if user has access, false otherwise
+ */
+export function hasProtectedPageAccess(allowedPages: string[], pagePath: string): boolean {
+  if (!isProtectedPage(pagePath)) {
+    return true; // ถ้าไม่ใช่ protected page ให้ผ่าน
+  }
+  
+  return hasPageAccess(allowedPages, pagePath);
 }
 
 /**

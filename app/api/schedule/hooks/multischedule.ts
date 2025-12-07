@@ -26,10 +26,38 @@ const DEFAULT_DAYS: DayConfig[] = [
 
 const DEFAULT_SCHOOL_INFO: SchoolInfo = {
   name: '',
-  startDate: new Date().toISOString().split('T')[0],
-  endDate: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  startTime: '08:00',
+  endTime: '16:00',
   minutesPerPeriod: 60,
 };
+
+// ฟังก์ชันสำหรับ generate periodConfigs จาก schoolInfo
+function generatePeriodConfigsFromSchoolInfo(schoolInfo: SchoolInfo): PeriodConfig[] {
+  if (!schoolInfo.startTime || !schoolInfo.endTime || !schoolInfo.minutesPerPeriod) {
+    return DEFAULT_PERIODS;
+  }
+  
+  const configs = [];
+  let id = 1;
+  let [sh, sm] = schoolInfo.startTime.split(':').map(Number);
+  let [eh, em] = schoolInfo.endTime.split(':').map(Number);
+  let start = new Date(2000, 0, 1, sh, sm);
+  let end = new Date(2000, 0, 1, eh, em);
+  
+  while (start < end) {
+    const periodStart = new Date(start.getTime());
+    start.setMinutes(start.getMinutes() + schoolInfo.minutesPerPeriod);
+    if (start > end) break;
+    configs.push({
+      id,
+      time: `${periodStart.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})} - ${start.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})}`,
+      minutesPerPeriod: schoolInfo.minutesPerPeriod
+    });
+    id++;
+  }
+  
+  return configs.length > 0 ? configs : DEFAULT_PERIODS;
+}
 
 export function useMultiSchedule() {
   const [sheets, setSheets] = useState<ScheduleSheet[]>([]);
@@ -45,15 +73,26 @@ export function useMultiSchedule() {
         // Migrate old data format to new format
         const migrated = parsed.map((sheet: any) => {
           if (!sheet.subjects) {
+            const schoolInfo = sheet.schoolInfo || DEFAULT_SCHOOL_INFO;
             return {
               ...sheet,
               subjects: [],
               teachers: [],
               rooms: [],
-              schoolInfo: { ...DEFAULT_SCHOOL_INFO },
-              periodConfigs: [...DEFAULT_PERIODS],
-              dayConfigs: [...DEFAULT_DAYS],
+              schoolInfo: { ...schoolInfo, startTime: schoolInfo.startTime || DEFAULT_SCHOOL_INFO.startTime, endTime: schoolInfo.endTime || DEFAULT_SCHOOL_INFO.endTime, minutesPerPeriod: schoolInfo.minutesPerPeriod || DEFAULT_SCHOOL_INFO.minutesPerPeriod },
+              periodConfigs: sheet.periodConfigs || generatePeriodConfigsFromSchoolInfo(schoolInfo),
+              dayConfigs: sheet.dayConfigs || [...DEFAULT_DAYS],
             };
+          }
+          // ถ้ามี schoolInfo แต่ไม่มี periodConfigs หรือ periodConfigs ไม่ตรงกับ schoolInfo ให้ generate ใหม่
+          if (sheet.schoolInfo && sheet.schoolInfo.startTime && sheet.schoolInfo.endTime) {
+            const generated = generatePeriodConfigsFromSchoolInfo(sheet.schoolInfo);
+            if (generated.length > 0 && (!sheet.periodConfigs || sheet.periodConfigs.length !== generated.length)) {
+              return {
+                ...sheet,
+                periodConfigs: generated
+              };
+            }
           }
           return sheet;
         });
@@ -70,7 +109,7 @@ export function useMultiSchedule() {
             teachers: [],
             rooms: [],
             schoolInfo: { ...DEFAULT_SCHOOL_INFO },
-            periodConfigs: [...DEFAULT_PERIODS],
+            periodConfigs: generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO),
             dayConfigs: [...DEFAULT_DAYS],
           };
           setSheets([newSheet]);
@@ -86,7 +125,7 @@ export function useMultiSchedule() {
           teachers: [],
           rooms: [],
           schoolInfo: { ...DEFAULT_SCHOOL_INFO },
-          periodConfigs: [...DEFAULT_PERIODS],
+          periodConfigs: generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO),
           dayConfigs: [...DEFAULT_DAYS],
         };
         setSheets([newSheet]);
@@ -102,7 +141,7 @@ export function useMultiSchedule() {
         teachers: [],
         rooms: [],
         schoolInfo: { ...DEFAULT_SCHOOL_INFO },
-        periodConfigs: [...DEFAULT_PERIODS],
+        periodConfigs: generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO),
         dayConfigs: [...DEFAULT_DAYS],
       };
       setSheets([newSheet]);
@@ -229,10 +268,71 @@ export function useMultiSchedule() {
   // จัดการห้องเรียน
   const addRoom = (room: Room) => {
     if (!activeSheetId) return;
-    setSheets(prev => prev.map(sheet => {
-      if (sheet.id !== activeSheetId) return sheet;
-      return { ...sheet, rooms: [...sheet.rooms, room] };
-    }));
+    
+    setSheets(prev => {
+      // หาตารางหลัก (activeSheet) เพื่อ copy schoolInfo และ periodConfigs
+      const mainSheet = prev.find(s => s.id === activeSheetId);
+      
+      // หาตารางอื่นที่มีข้อมูลโรงเรียนที่ตั้งค่าแล้ว (มี startTime และ endTime และ name ไม่ว่าง หรือมี startTime/endTime)
+      // ให้ priority ห้องที่มี roomId ก่อน (ห้องเรียน) แล้วค่อยหาตารางหลัก
+      const sheetWithSchoolInfo = prev.find(s => 
+        s.schoolInfo?.startTime && 
+        s.schoolInfo?.endTime && 
+        s.schoolInfo.startTime !== '--:--' && 
+        s.schoolInfo.endTime !== '--:--' &&
+        s.schoolInfo.startTime !== '' &&
+        s.schoolInfo.endTime !== ''
+      ) || prev.find(s => 
+        s.schoolInfo?.startTime && 
+        s.schoolInfo?.endTime
+      );
+      
+      // ใช้ข้อมูลจากตารางที่มีข้อมูลแล้ว หรือจากตารางหลัก หรือค่า default
+      let sourceSchoolInfo: SchoolInfo;
+      if (sheetWithSchoolInfo?.schoolInfo?.startTime && sheetWithSchoolInfo?.schoolInfo?.endTime) {
+        // ใช้จากตารางที่มีข้อมูลแล้ว
+        sourceSchoolInfo = { ...sheetWithSchoolInfo.schoolInfo };
+      } else if (mainSheet?.schoolInfo?.startTime && mainSheet?.schoolInfo?.endTime) {
+        // ใช้จากตารางหลัก
+        sourceSchoolInfo = { ...mainSheet.schoolInfo };
+      } else {
+        // ใช้ค่า default
+        sourceSchoolInfo = { ...DEFAULT_SCHOOL_INFO };
+      }
+      
+      // Generate periodConfigs จาก schoolInfo
+      let sourcePeriodConfigs: PeriodConfig[];
+      if (sourceSchoolInfo.startTime && sourceSchoolInfo.endTime && sourceSchoolInfo.minutesPerPeriod) {
+        sourcePeriodConfigs = generatePeriodConfigsFromSchoolInfo(sourceSchoolInfo);
+      } else {
+        // ใช้ periodConfigs จากตารางที่มีข้อมูลแล้ว หรือจากตารางหลัก
+        sourcePeriodConfigs = sheetWithSchoolInfo?.periodConfigs || 
+                              mainSheet?.periodConfigs || 
+                              generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO);
+      }
+      
+      // สร้างตารางเรียนใหม่สำหรับห้องนี้ (copy schoolInfo และ periodConfigs)
+      const newSheet: ScheduleSheet = {
+        id: Date.now().toString(),
+        name: `ตารางเรียน - ${room.name}`,
+        roomId: room.id,
+        slots: [],
+        subjects: [],
+        teachers: [],
+        rooms: [room], // เก็บห้องไว้ในตารางนี้ด้วย
+        schoolInfo: { ...sourceSchoolInfo },
+        periodConfigs: [...sourcePeriodConfigs],
+        dayConfigs: [...DEFAULT_DAYS],
+      };
+      
+      // เพิ่มห้องในตารางปัจจุบัน (สำหรับการจัดการทั่วไป)
+      const updatedSheets = prev.map(sheet => {
+        if (sheet.id !== activeSheetId) return sheet;
+        return { ...sheet, rooms: [...sheet.rooms, room] };
+      });
+      // เพิ่มตารางเรียนใหม่สำหรับห้องนี้
+      return [...updatedSheets, newSheet];
+    });
   };
 
   const updateRoom = (room: Room) => {
@@ -245,23 +345,40 @@ export function useMultiSchedule() {
 
   const deleteRoom = (roomId: string) => {
     if (!activeSheetId) return;
-    setSheets(prev => prev.map(sheet => {
-      if (sheet.id !== activeSheetId) return sheet;
-      return { 
-        ...sheet, 
-        rooms: sheet.rooms.filter(r => r.id !== roomId),
-        slots: sheet.slots.filter(s => s.roomId !== roomId)
-      };
-    }));
+    setSheets(prev => {
+      // ลบห้องจากตารางปัจจุบัน
+      const updatedSheets = prev.map(sheet => {
+        if (sheet.id !== activeSheetId) return sheet;
+        return { 
+          ...sheet, 
+          rooms: sheet.rooms.filter(r => r.id !== roomId),
+          slots: sheet.slots.filter(s => s.roomId !== roomId)
+        };
+      });
+      // ลบตารางเรียนที่เชื่อมกับห้องนี้
+      const filteredSheets = updatedSheets.filter(sheet => sheet.roomId !== roomId);
+      
+      // ถ้าตารางที่กำลังเปิดอยู่ถูกลบ ให้เปลี่ยนไปตารางอื่น
+      if (filteredSheets.length > 0 && !filteredSheets.find(s => s.id === activeSheetId)) {
+        setActiveSheetId(filteredSheets[0].id);
+      } else if (filteredSheets.length === 0) {
+        setActiveSheetId(null);
+      }
+      
+      return filteredSheets;
+    });
   };
 
-  // อัปเดตข้อมูลโรงเรียน
+  // อัปเดตข้อมูลโรงเรียน - อัปเดตทุกตารางให้เหมือนกันทั้งหมด
   const updateSchoolInfo = (schoolInfo: SchoolInfo) => {
     if (!activeSheetId) return;
-    setSheets(prev => prev.map(sheet => {
-      if (sheet.id !== activeSheetId) return sheet;
-      return { ...sheet, schoolInfo };
-    }));
+    setSheets(prev => {
+      // อัปเดตทุกตารางให้มี schoolInfo เหมือนกันทั้งหมด
+      return prev.map(sheet => ({
+        ...sheet,
+        schoolInfo: { ...schoolInfo }
+      }));
+    });
   };
 
   // อัปเดตการตั้งค่าคาบ
@@ -290,6 +407,43 @@ export function useMultiSchedule() {
 
   const activeSheet = sheets.find(s => s.id === activeSheetId);
 
+  // ดึงรายการห้องทั้งหมดจากทุกตาราง
+  const getAllRooms = (): Room[] => {
+    const roomMap = new Map<string, Room>();
+    sheets.forEach(sheet => {
+      sheet.rooms.forEach(room => {
+        if (!roomMap.has(room.id)) {
+          roomMap.set(room.id, room);
+        }
+      });
+    });
+    return Array.from(roomMap.values());
+  };
+
+  const setPeriodConfigs = (periodConfigs: PeriodConfig[]) => {
+    if (!activeSheetId) return;
+    
+    // เก็บ period IDs ที่ยังใช้ได้ (period ที่อยู่ในช่วงเวลาใหม่)
+    const validPeriodIds = new Set(periodConfigs.map(p => p.id));
+    
+    setSheets(prev => {
+      // อัปเดตทุกตารางให้มี periodConfigs เหมือนกันทั้งหมด และลบ slots ที่อยู่นอกช่วงเวลา
+      return prev.map(sheet => {
+        const validSlots = sheet.slots.filter(slot => validPeriodIds.has(slot.period));
+        return {
+          ...sheet,
+          periodConfigs: [...periodConfigs],
+          slots: validSlots
+        };
+      });
+    });
+  };
+
+  // ดึงตารางที่เชื่อมกับห้อง
+  const getSheetByRoomId = (roomId: string): ScheduleSheet | undefined => {
+    return sheets.find(s => s.roomId === roomId);
+  };
+
   return { 
     sheets, 
     activeSheet, 
@@ -311,6 +465,9 @@ export function useMultiSchedule() {
     updateSchoolInfo,
     updatePeriodConfig,
     updateDayConfig,
+    getAllRooms,
+    getSheetByRoomId,
+    setPeriodConfigs,
     isLoaded 
   };
 }

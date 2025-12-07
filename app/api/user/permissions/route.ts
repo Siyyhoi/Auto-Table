@@ -19,9 +19,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ allowedPages: [] }, { status: 404 });
     }
 
-    // 2. เอาชื่อ Role ที่ได้ ไปค้นหาในตาราง Permissions (หรือ Role)
-    // *** ต้องเช็คชื่อ Model ใน schema.prisma ว่าชื่อ permissions หรือ roles ***
-    // สมมติว่าชื่อ permissions (ตามรูปที่มี permission_name)
     const permissionRecord = await prisma.permissions.findFirst({
       where: { 
         permission_name: user.role // ค้นหาด้วยคำว่า "USERS"
@@ -35,16 +32,32 @@ export async function GET(request: NextRequest) {
     // 3. จัดการข้อมูล allow_pages (แปลงให้เป็น Array เสมอ)
     let allowedPages = permissionRecord.allow_pages;
 
-    // ถ้าใน Database เก็บเป็น String ตัวเดียว เช่น "/schedule" ให้แปลงเป็น Array ["/schedule"]
+    // ถ้าใน Database เก็บเป็น String
     if (typeof allowedPages === 'string') {
-        allowedPages = [allowedPages]; 
-    } else if (!Array.isArray(allowedPages)) {
-        // กรณีเป็น null หรือ format ผิด
+        // ลอง parse เป็น JSON ก่อน (กรณีเก็บเป็น JSON string)
+        try {
+            const parsed = JSON.parse(allowedPages);
+            allowedPages = Array.isArray(parsed) ? parsed : [allowedPages];
+        } catch {
+            // ถ้า parse ไม่ได้ แสดงว่าเป็น plain string
+            // ถ้ามี comma ให้ split เป็น array
+            if (allowedPages.includes(',')) {
+                allowedPages = allowedPages.split(',').map(page => page.trim()).filter(page => page.length > 0);
+            } else {
+                // ถ้าไม่มี comma ให้แปลงเป็น array เดียว
+                allowedPages = [allowedPages.trim()].filter(page => page.length > 0);
+            }
+        }
+    } else if (Array.isArray(allowedPages)) {
+        // ถ้าเป็น array อยู่แล้ว ให้ trim แต่ละ element
+        allowedPages = allowedPages.map(page => typeof page === 'string' ? page.trim() : page).filter(page => page && page.length > 0);
+    } else {
+
         allowedPages = [];
     }
 
     return NextResponse.json({
-      allowedPages, // ส่งกลับเป็น Array เช่น ["/schedule"]
+      allowedPages,
       success: true,
     });
 

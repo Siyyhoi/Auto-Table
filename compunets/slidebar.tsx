@@ -9,10 +9,13 @@ import {
   HelpCircle,
   LogIn,
   User,
+  ShieldCheck,
 } from 'lucide-react';
 import Swal from 'sweetalert2'; 
 import Login from './login';
 import Register from './register';
+import { getProtectedPagePaths, getPermissionKey } from '@/lib/permission-config';
+import { parseAllowedPages } from '@/lib/permission-utils';
 
 const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -51,8 +54,9 @@ const Sidebar = () => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Permission Data from API:", data);
-        setAllowedPages(data.allowedPages || []);
+        const pages = parseAllowedPages(data.allowedPages);
+        console.log("Processed allowed pages:", pages);
+        setAllowedPages(pages);
       } else {
         setAllowedPages([]);
       }
@@ -79,20 +83,24 @@ const Sidebar = () => {
       if (result.isConfirmed) {
         // ล้างข้อมูล
         localStorage.removeItem('user');
-        // localStorage.removeItem('token'); // อย่าลืมลบ token ด้วยถ้ามี
+        localStorage.removeItem('permission');
         
-        // Reset State
+        // Reset State ทันที
         setCurrentUser(null);
         setAllowedPages([]);
+        
+        // Refresh permissions เพื่อให้ UI อัปเดตทันที
+        loadUserPermissions();
 
         Swal.fire({
             title: 'ออกจากระบบสำเร็จ',
             icon: 'success',
             timer: 1500,
             showConfirmButton: false
+        }).then(() => {
+          // Reload page เพื่อให้แน่ใจว่า UI อัปเดตทั้งหมด
+          window.location.reload();
         });
-        
-        // Optional: window.location.reload(); // ถ้าระบบรวนให้เปิดบรรทัดนี้เพื่อรีโหลดหน้า
       }
     });
   };
@@ -132,14 +140,18 @@ const Sidebar = () => {
     const allMenuItems = [
     { name: 'Dashboard', href: '/', icon: <LayoutDashboard size={22} /> },
     { name: 'Schedule', href: '/schedule', icon: <ClipboardClock size={22} /> },
+    { name: 'Permission', href: '/permission', icon: <ShieldCheck size={22} /> },
     { name: 'Help', href: '/help', icon: <HelpCircle size={22} /> },
     ];
 
-    const conditionallyHidden = ['/schedule'];
+    // ใช้ protected pages จาก config
+    const conditionallyHidden = getProtectedPagePaths();
 
     const menuItems = allMenuItems.filter((item) => {
     if (conditionallyHidden.includes(item.href)) {
-        return allowedPages.includes(item.href);
+        // ตรวจสอบทั้ง path และ permission key
+        const permissionKey = getPermissionKey(item.href);
+        return allowedPages.includes(item.href) || (permissionKey && allowedPages.includes(permissionKey));
     }
     return true;
     });

@@ -14,6 +14,8 @@ export interface Subject {
   code: string;      // รหัสวิชา
   name: string;      // ชื่อวิชา
   color?: string;    // สีพื้นหลัง
+  teacherId?: string;  // ID ของอาจารย์
+  roomId?: string;
 }
 
 export interface Teacher {
@@ -30,8 +32,8 @@ export interface Room {
 
 export interface SchoolInfo {
   name: string;      // ชื่อโรงเรียน
-  startDate: string; // วันที่เริ่มเรียน (YYYY-MM-DD)
-  endDate: string;   // วันที่สิ้นสุด (YYYY-MM-DD)
+  startTime: string;   // เวลาที่เริ่มเรียน (HH:mm)
+  endTime: string;     // เวลาที่สิ้นสุด (HH:mm)
   minutesPerPeriod: number; // นาทีต่อคาบ
 }
 
@@ -51,10 +53,11 @@ export interface DayConfig {
 export interface ScheduleSheet {
   id: string;        // ID ของแผ่นตาราง
   name: string;      // ชื่อตาราง เช่น "ตารางเรียนเทอม 1"
+  roomId?: string;   // ID ของห้องเรียนที่ตารางนี้เป็นของ (ถ้ามี)
   slots: ClassSlot[]; // รายวิชาในตารางนี้
   subjects: Subject[]; // รายการวิชา
   teachers: Teacher[]; // รายการอาจารย์
-  rooms: Room[];     // รายการห้องเรียน
+  rooms: Room[];     // รายการห้องเรียน (สำหรับห้องที่ไม่ได้เชื่อมกับตาราง)
   schoolInfo: SchoolInfo; // ข้อมูลโรงเรียน
   periodConfigs: PeriodConfig[]; // การตั้งค่าคาบ
   dayConfigs: DayConfig[]; // การตั้งค่าวัน
