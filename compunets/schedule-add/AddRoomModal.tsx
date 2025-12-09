@@ -3,20 +3,18 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import React, { useState } from 'react';
 import { Room } from '@/app/api/schedule/type/schedule';
+import { X } from 'lucide-react';
 
 interface AddRoomModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (room: Room) => void;
-  allRooms: Room[];
-  getSheetByRoomId?: (roomId: string) => any;
-  onSelectRoom?: (roomId: string) => void;
   editingRoom?: Room | null; // เพิ่ม prop สำหรับแก้ไข
 }
 
 const modalVar = {
   hidden: { opacity: 0, scale: 0.8 },
-  visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 25 } },
+  visible: { opacity: 1, scale: 1, transition: { type: "spring" as const, stiffness: 300, damping: 25 } },
   exit: { opacity: 0, scale: 0.8, transition: { duration: 0.2 } }
 };
 
@@ -24,56 +22,44 @@ export default function AddRoomModal({
   isOpen, 
   onClose, 
   onSave, 
-  allRooms, 
-  getSheetByRoomId,
-  onSelectRoom,
   editingRoom = null
 }: AddRoomModalProps) {
   const [name, setName] = useState('');
-  const [capacity, setCapacity] = useState('');
-  const [showForm, setShowForm] = useState(false);
+  const [roomType, setRoomType] = useState('');
+  const [capacity, setCapacity] = useState<number | ''>('');
 
-  // เมื่อ editingRoom เปลี่ยน หรือ isOpen เปลี่ยน ให้โหลดข้อมูลหรือแสดง form
+  // เมื่อ editingRoom เปลี่ยน หรือ isOpen เปลี่ยน ให้โหลดข้อมูล
   React.useEffect(() => {
     if (editingRoom) {
       setName(editingRoom.name);
-      setCapacity(editingRoom.capacity?.toString() || '');
-      setShowForm(true);
-    } else if (isOpen && !editingRoom) {
-      // ถ้าเปิด modal โดยไม่มีการแก้ไข ให้แสดงรายการห้อง
-      setShowForm(false);
+      setRoomType(editingRoom.room_type || '');
+      setCapacity(editingRoom.capacity ?? '');
+    } else {
       setName('');
+      setRoomType('');
       setCapacity('');
     }
   }, [editingRoom, isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || !roomType.trim()) return;
 
     const roomData: Room = {
       id: editingRoom?.id || `room-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: name.trim(),
-      capacity: capacity ? parseInt(capacity) : undefined
+      room_type: roomType.trim(),
+      capacity: typeof capacity === 'number' ? capacity : undefined
     };
 
     onSave(roomData);
-    setName('');
-    setCapacity('');
-    setShowForm(false);
+    handleClose();
   };
 
   const handleClose = () => {
     setName('');
+    setRoomType('');
     setCapacity('');
-    setShowForm(false);
-    onClose();
-  };
-
-  const handleSelectRoom = (roomId: string) => {
-    if (onSelectRoom) {
-      onSelectRoom(roomId);
-    }
     onClose();
   };
 
@@ -92,134 +78,90 @@ export default function AddRoomModal({
             initial="hidden"
             animate="visible"
             exit="exit"
-            className="bg-white p-6 rounded-xl shadow-2xl w-[90vw] max-w-2xl max-h-[90vh] overflow-y-auto"
+            className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 relative border border-gray-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-xl text-black">
-                {editingRoom ? 'แก้ไขห้องเรียน' : 'จัดการห้องเรียน'}
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-semibold text-gray-800">
+                {editingRoom ? 'แก้ไขห้องเรียน' : 'เพิ่มห้องเรียน'}
               </h3>
-              <motion.button 
-                whileHover={{ rotate: 90, scale: 1.1 }}
+              <motion.button
+                whileHover={{ rotate: 90, scale: 1.15 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={handleClose}
-                className="text-black hover:text-gray-700 text-4xl font-light w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
+                className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition"
               >
-                ×
+                <X className="text-gray-700" size={26} />
               </motion.button>
             </div>
 
-            {!showForm ? (
-              <div className="space-y-4">
-                {/* รายการห้องเรียนที่มีอยู่ */}
-                {allRooms.length > 0 && (
-                  <div>
-                    <h4 className="font-semibold text-lg mb-3 text-black">ห้องเรียนที่มีอยู่</h4>
-                    <div className="max-h-[300px] overflow-y-auto space-y-2">
-                      {allRooms.map((room) => {
-                        const hasSchedule = getSheetByRoomId && getSheetByRoomId(room.id);
-                        return (
-                          <motion.div
-                            key={room.id}
-                            whileHover={{ scale: 1.02 }}
-                            className="border p-3 rounded-lg flex justify-between items-center cursor-pointer hover:bg-gray-50"
-                            onClick={() => handleSelectRoom(room.id)}
-                          >
-                            <div className="flex-1">
-                              <div className="font-bold text-black flex items-center gap-2">
-                                {room.name}
-                                {hasSchedule && (
-                                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                                    📅 มีตารางเรียน
-                                  </span>
-                                )}
-                              </div>
-                              {room.capacity && (
-                                <div className="text-sm text-gray-600">ความจุ: {room.capacity} คน</div>
-                              )}
-                            </div>
-                            <motion.button
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.9 }}
-                              className="text-blue-600 hover:text-blue-800 font-medium"
-                            >
-                              ดูตาราง →
-                            </motion.button>
-                          </motion.div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* ปุ่มเพิ่มห้องเรียนใหม่ */}
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => setShowForm(true)}
-                  className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center justify-center gap-2"
-                >
-                  <span className="text-xl">+</span>
-                  เพิ่มห้องเรียนใหม่
-                </motion.button>
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Room Name */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">
+                  ชื่อห้องเรียน <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition text-black"
+                  placeholder="เช่น 404, Lab 1"
+                  required
+                  autoFocus
+                />
               </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-black">
-                    ชื่อห้องเรียน <span className="text-red-500">*</span>
-                  </label>
+
+              {/* Room Type */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">
+                  ประเภทห้อง <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
                   <input
                     type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full border p-2 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="เช่น 404, Lab 1"
+                    value={roomType}
+                    onChange={(e) => setRoomType(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 appearance-none bg-gray-50 hover:bg-white transition focus:ring-2 focus:ring-blue-500 text-black"
+                    placeholder="เช่น ห้องเรียน, ห้องปฏิบัติการ, ห้องประชุม,"
                     required
-                    autoFocus
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-black">
-                    ความจุ (ไม่บังคับ)
-                  </label>
-                  <input
-                    type="number"
-                    value={capacity}
-                    onChange={(e) => setCapacity(e.target.value)}
-                    className="w-full border p-2 rounded-lg text-black focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    placeholder="เช่น 40"
-                    min="1"
-                  />
-                </div>
+              {/* Capacity */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">
+                  ความจุ (ไม่บังคับ)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition text-black"
+                  placeholder="เช่น 40"
+                />
+              </div>
 
-                <div className="flex gap-2 pt-4">
-                  <motion.button
-                    type="button"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      setShowForm(false);
-                      setName('');
-                      setCapacity('');
-                    }}
-                    className="flex-1 px-4 py-2 bg-gray-200 text-black rounded-lg hover:bg-gray-300 transition-colors"
-                  >
-                    ยกเลิก
-                  </motion.button>
-                  <motion.button
-                    type="submit"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                    disabled={!name.trim()}
-                  >
-                    บันทึก
-                  </motion.button>
-                </div>
-              </form>
-            )}
+              {/* Buttons */}
+              <div className="flex gap-3 pt-4">
+                <motion.button
+                  type="button"
+                  onClick={handleClose}
+                  className="flex-1 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 transition text-black"
+                >
+                  ยกเลิก
+                </motion.button>
+                <motion.button
+                  type="submit"
+                  disabled={!name.trim() || !roomType.trim()}
+                  className="flex-1 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white transition disabled:opacity-50 text-black"
+                >
+                  บันทึก
+                </motion.button>
+              </div>
+            </form>
           </motion.div>
         </motion.div>
       )}

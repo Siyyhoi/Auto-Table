@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMultiSchedule } from '../api/schedule/hooks/multischedule';
 import { ClassSlot, Subject, Teacher, Room, PeriodConfig, SchoolInfo } from '../api/schedule/type/schedule';
-import { X, School, GraduationCap, UserRound, Book } from "lucide-react";
+import { X, School, GraduationCap, UserRound, Book, Save, Loader2, CheckCircle2, AlertCircle, Calendar } from "lucide-react";
 import { useRouter } from 'next/navigation';
 
 
@@ -20,6 +20,7 @@ import AddRoomModal from '@/compunets/schedule-add/AddRoomModal';
 import AddSubjectModal from '@/compunets/schedule-add/AddSubjectModal';
 import AddTeacherModal from '@/compunets/schedule-add/AddTeacherModal';
 import ConfirmDeleteModal from '@/compunets/schedule-add/ConfirmDeleteModal';
+import CreateScheduleModal from '@/compunets/schedule-add/CreateScheduleModal';
 
 const containerVar: Variants = {
   hidden: { opacity: 0 },
@@ -41,6 +42,36 @@ const modalVar: Variants = {
 };
 
 export default function SchedulePage() {
+  const [userId, setUserId] = useState<number | null>(null);
+
+  // ดึง userId เมื่อ component mount
+  useEffect(() => {
+    async function getCurrentUserId() {
+      try {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          const user = JSON.parse(storedUser);
+          const response = await fetch('/api/user/current', {
+            headers: {
+              'x-username': user.username,
+            },
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.userId) {
+              setUserId(data.userId);
+              console.log('User ID loaded:', data.userId);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user ID:', error);
+      }
+    }
+    getCurrentUserId();
+  }, []);
+
   const { 
     sheets, activeSheet, activeSheetId, setActiveSheetId, 
     createSheet, deleteSheet, updateSlot, removeSlot, isLoaded,
@@ -48,8 +79,10 @@ export default function SchedulePage() {
     addTeacher, updateTeacher, deleteTeacher,
     addRoom, updateRoom, deleteRoom,
     updateSchoolInfo, updatePeriodConfig, updateDayConfig,
-    getAllRooms, getSheetByRoomId, setPeriodConfigs
-  } = useMultiSchedule();
+    getAllRooms, setPeriodConfigs,
+    saveStatus
+  } = useMultiSchedule(userId);
+
 
   const [isEditing, setIsEditing] = useState<{day: string, period: number} | null>(null);
   const [isEditingHeader, setIsEditingHeader] = useState<'day' | 'period' | null>(null);
@@ -58,8 +91,8 @@ export default function SchedulePage() {
     code: '', name: '', teacherId: '', roomId: '' 
   });
   const [activeTab, setActiveTab] = useState<'subject' | 'teacher' | 'school' | 'room'>('subject');
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [isAddRoomModalOpen, setIsAddRoomModalOpen] = useState(false);
+  const [isCreateScheduleModalOpen, setIsCreateScheduleModalOpen] = useState(false);
   const [isAddSubjectModalOpen, setIsAddSubjectModalOpen] = useState(false);
   const [isAddTeacherModalOpen, setIsAddTeacherModalOpen] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
@@ -67,7 +100,7 @@ export default function SchedulePage() {
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [deleteModal, setDeleteModal] = useState<{
     isOpen: boolean;
-    type: 'subject' | 'teacher' | 'room' | null;
+    type: 'subject' | 'teacher' | 'room' | 'schedule' | null;
     id: string | null;
     name: string | null;
   }>({
@@ -87,42 +120,15 @@ export default function SchedulePage() {
   // ดึงข้อมูลห้องทั้งหมด (ต้องประกาศก่อน useEffect)
   const allRooms = getAllRooms();
 
-  // เมื่อโหลดเสร็จ ให้เลือกห้องแรกสุดอัตโนมัติ
-  useEffect(() => {
-    if (isLoaded && allRooms.length > 0 && !selectedRoomId) {
-      const firstRoom = allRooms[0];
-      const roomSheet = getSheetByRoomId(firstRoom.id);
-      if (roomSheet) {
-        setSelectedRoomId(firstRoom.id);
-        setActiveSheetId(roomSheet.id);
-      }
-    }
-  }, [isLoaded, allRooms.length, selectedRoomId, getSheetByRoomId, setActiveSheetId]);
-
-  // เมื่อเลือกห้อง ให้เปลี่ยนไปตารางที่เชื่อมกับห้องนั้น
-  useEffect(() => {
-    if (selectedRoomId) {
-      const roomSheet = getSheetByRoomId(selectedRoomId);
-      if (roomSheet) {
-        setActiveSheetId(roomSheet.id);
-      }
-    }
-  }, [selectedRoomId, getSheetByRoomId, setActiveSheetId]);
-
-  if (!isLoaded || !activeSheet) return (
-    <div className="p-10 text-center ml-20 animate-pulse">
-      กำลังโหลดข้อมูล...
-    </div>
-  );
-
-  const DAYS = activeSheet.dayConfigs || [];
-  const PERIODS = activeSheet.periodConfigs || [];
+  const DAYS = activeSheet?.dayConfigs || [];
+  const PERIODS = activeSheet?.periodConfigs || [];
 
   // NOTE: don't early-return when there are no rooms — keep rendering the
   // page so modals (the Navbar modal) can open even when `allRooms` is empty.
 
   // ฟังก์ชันเปิด Modal แก้ไขช่องตาราง
   const openEdit = (day: string, period: number) => {
+    if (!activeSheet) return;
     const existing = activeSheet.slots.find(s => s.day === day && s.period === period);
     if (existing) {
       setTempData({ 
@@ -146,7 +152,7 @@ export default function SchedulePage() {
 
   // บันทึกข้อมูลช่องตาราง
   const handleSave = () => {
-    if (!isEditing) return;
+    if (!isEditing || !activeSheet) return;
     if (!tempData.name && !tempData.code) {
       removeSlot(isEditing.day, isEditing.period);
     } else {
@@ -199,7 +205,7 @@ export default function SchedulePage() {
   };
 
   // เปิด Modal ยืนยันการลบ
-  const openDeleteModal = (type: 'subject' | 'teacher' | 'room', id: string, name: string) => {
+  const openDeleteModal = (type: 'subject' | 'teacher' | 'room' | 'schedule', id: string, name: string) => {
     setDeleteModal({ isOpen: true, type, id, name });
   };
 
@@ -217,6 +223,14 @@ export default function SchedulePage() {
       case 'room':
         deleteRoom(deleteModal.id);
         break;
+      case 'schedule':
+        if (sheets.length <= 1) {
+          alert('ไม่สามารถลบตารางเรียนได้ ต้องมีอย่างน้อย 1 ตารางเรียน');
+          setDeleteModal({ isOpen: false, type: null, id: null, name: null });
+          return;
+        }
+        deleteSheet(deleteModal.id);
+        break;
     }
 
     setDeleteModal({ isOpen: false, type: null, id: null, name: null });
@@ -230,16 +244,15 @@ export default function SchedulePage() {
       setIsAddRoomModalOpen(false);
     } else {
       addRoom(room);
-      // หลังจากสร้างห้องแล้ว ให้เลือกห้องนั้น
-      setTimeout(() => {
-        const roomSheet = getSheetByRoomId(room.id);
-        if (roomSheet) {
-          setSelectedRoomId(room.id);
-          setActiveSheetId(roomSheet.id);
-        }
-      }, 100);
       setIsAddRoomModalOpen(false);
     }
+  };
+
+  // สร้างตารางเรียนใหม่ (ไม่เชื่อมกับห้อง)
+  const handleCreateSchedule = (scheduleName: string, grade?: string) => {
+    console.log('Creating schedule:', scheduleName, grade);
+    createSheet(scheduleName, grade);
+    console.log('Schedule created, sheets count:', sheets.length + 1);
   };
 
   const handleEditRoom = (room: Room) => {
@@ -249,6 +262,7 @@ export default function SchedulePage() {
 
   // อัปเดตห้องที่อาจารย์สอนได้
   const handleTeacherRoomToggle = (teacherId: string, roomId: string) => {
+    if (!activeSheet) return;
     const teacher = activeSheet.teachers.find(t => t.id === teacherId);
     if (!teacher) return;
     
@@ -304,15 +318,47 @@ export default function SchedulePage() {
         className="bg-white shadow-md rounded-lg mb-6 p-4"
       >
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <h1 className="text-2xl font-bold text-black flex items-center gap-2">
-            <motion.span 
-              animate={{ rotate: [0, 10, -10, 0] }}
-              transition={{ repeat: Infinity, repeatDelay: 5, duration: 1 }}
-            >
-              📅
-            </motion.span> 
-            ตารางเรียน
-          </h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-black flex items-center gap-2">
+              <motion.span 
+                animate={{ rotate: [0, 10, -10, 0] }}
+                transition={{ repeat: Infinity, repeatDelay: 5, duration: 1 }}
+              >
+                📅
+              </motion.span> 
+              ตารางเรียน
+            </h1>
+            
+            {/* Save Status Indicator */}
+            {userId && (
+              <div className="flex items-center gap-2 text-sm">
+                {saveStatus === 'saving' && (
+                  <div className="flex items-center gap-2 text-blue-600">
+                    <Loader2 className="animate-spin" size={16} />
+                    <span>กำลังบันทึก...</span>
+                  </div>
+                )}
+                {saveStatus === 'saved' && (
+                  <div className="flex items-center gap-2 text-green-600">
+                    <CheckCircle2 size={16} />
+                    <span>บันทึกแล้ว</span>
+                  </div>
+                )}
+                {saveStatus === 'unsaved' && (
+                  <div className="flex items-center gap-2 text-yellow-600">
+                    <Save size={16} />
+                    <span>ยังไม่บันทึก</span>
+                  </div>
+                )}
+                {saveStatus === 'error' && (
+                  <div className="flex items-center gap-2 text-red-600">
+                    <AlertCircle size={16} />
+                    <span>บันทึกไม่สำเร็จ</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           
           {/* Navbar Menu */}
           <div className="flex flex-wrap gap-2">
@@ -340,57 +386,77 @@ export default function SchedulePage() {
       {/* Header & Tabs */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div className="flex flex-col gap-4 w-full">
-          {/* Room Selector */}
-          {allRooms.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              <span className="text-sm font-medium text-black self-center">เลือกห้อง:</span>
-              {allRooms.map(room => {
-                const roomSheet = getSheetByRoomId(room.id);
-                return (
+          {/* Schedule List Tabs */}
+          {sheets.length > 0 && (
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-sm font-medium text-black">ตารางเรียน:</span>
+              {sheets.map((sheet) => (
+                <div
+                  key={sheet.id}
+                  className={`relative group flex items-center gap-1 px-4 py-2 rounded-lg text-sm transition-all ${
+                    activeSheetId === sheet.id
+                      ? 'bg-green-600 text-white shadow-md' 
+                      : 'bg-white text-black hover:bg-gray-100 border'
+                  }`}
+                >
                   <motion.button
-                    key={room.id}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => {
-                      setSelectedRoomId(room.id);
-                      if (roomSheet) {
-                        setActiveSheetId(roomSheet.id);
-                      }
-                    }}
-                    className={`px-4 py-2 rounded-lg text-sm transition-all relative ${
-                      selectedRoomId === room.id && activeSheet?.roomId === room.id
-                        ? 'bg-green-600 text-white shadow-md' 
-                        : 'bg-white text-black hover:bg-gray-100 border'
-                    }`}
+                    onClick={() => setActiveSheetId(sheet.id)}
+                    className="flex items-center gap-1"
                   >
-                    {room.name}
-                    {selectedRoomId === room.id && activeSheet?.roomId === room.id && (
-                      <motion.div
-                        layoutId="activeRoomIndicator"
-                        className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 rounded-full"
-                      />
+                    {sheet.name}
+                    {sheet.grade && (
+                      <span className="ml-1 text-xs opacity-75">
+                        ({sheet.grade})
+                      </span>
                     )}
                   </motion.button>
-                );
-              })}
+                  {sheets.length > 1 && (
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDeleteModal('schedule', sheet.id, sheet.name);
+                      }}
+                      className={`ml-1 p-1 rounded hover:bg-opacity-20 transition-colors ${
+                        activeSheetId === sheet.id
+                          ? 'hover:bg-white/30 text-white'
+                          : 'hover:bg-red-100 text-red-600'
+                      }`}
+                      title="ลบตารางเรียน"
+                    >
+                      <X size={14} />
+                    </motion.button>
+                  )}
+                  {activeSheetId === sheet.id && (
+                    <motion.div
+                      layoutId="activeScheduleIndicator"
+                      className="absolute bottom-0 left-0 right-0 h-1 bg-white/30 rounded-full"
+                    />
+                  )}
+                </div>
+              ))}
             </div>
           )}
           
-          {/* Room Selector Button */}
+          {/* Create Schedule Button */}
           <div className="flex flex-wrap gap-2">
             <motion.button 
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => openNavbarModal('room')}
+              onClick={() => setIsCreateScheduleModalOpen(true)}
               className="px-4 py-2 rounded-lg text-sm bg-green-600 text-white hover:bg-green-700 shadow-md font-medium flex items-center gap-2"
             >
-              เพิ่มห้องเรียน
+              <Calendar size={18} />
+              เพิ่มตารางเรียน
             </motion.button>
           </div>
         </div>
       </div>
 
-    {allRooms.length === 0 ? (
+    {sheets.length === 0 ? (
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -403,17 +469,17 @@ export default function SchedulePage() {
             transition={{ duration: 0.35 }}
             className="bg-white p-8 rounded-xl shadow-lg"
           >
-            <GraduationCap size={64} className="mx-auto mb-4 text-gray-400" />
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">ยังไม่มีห้องเรียน</h2>
-            <p className="text-gray-600 mb-6">กรุณาเพิ่มห้องเรียนก่อนเพื่อเริ่มใช้งานตารางเรียน</p>
+            <Calendar size={64} className="mx-auto mb-4 text-gray-400" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">ยังไม่มีตารางเรียน</h2>
+            <p className="text-gray-600 mb-6">กรุณาสร้างตารางเรียนเพื่อเริ่มใช้งาน</p>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              onClick={() => openNavbarModal('room')}
+              onClick={() => setIsCreateScheduleModalOpen(true)}
               className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-md font-medium flex items-center gap-2 mx-auto"
             >
-              <GraduationCap size={20} />
-              เพิ่มห้องเรียน
+              <Calendar size={20} />
+              สร้างตารางเรียน
             </motion.button>
           </motion.div>
         </div>
@@ -506,7 +572,7 @@ export default function SchedulePage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
             >
-                {activeTab === 'subject' && (
+                {activeTab === 'subject' && activeSheet && (
                 <SubjectTab 
                     activeSheet={activeSheet}
                     handleAddSubject={() => {
@@ -522,7 +588,7 @@ export default function SchedulePage() {
                 />
                 )}
 
-                {activeTab === 'teacher' && (
+                {activeTab === 'teacher' && activeSheet && (
                 <TeacherTab 
                     activeSheet={activeSheet}
                     handleAddTeacher={() => {
@@ -532,21 +598,17 @@ export default function SchedulePage() {
                     handleEditTeacher={handleEditTeacher}
                     deleteTeacher={(id) => {
                       const teacher = activeSheet.teachers.find(t => t.id === id);
-                      openDeleteModal('teacher', id, teacher?.name || '');
+                      const teacherName = teacher?.full_name || (teacher ? `${teacher.first_name} ${teacher.last_name}` : '');
+                      openDeleteModal('teacher', id, teacherName);
                     }}
                     handleTeacherRoomToggle={handleTeacherRoomToggle}
                 />
                 )}
 
-                {activeTab === 'school' && (
+                {activeTab === 'school' && activeSheet && (
                   <SchoolTab
                     activeSheet={activeSheet}
                     updateSchoolInfo={handleUpdateSchoolInfo}
-                    
-                    // ❌ ของเดิม (ผิด): เพราะ Modal นี้ไม่ได้ใช้ state นี้
-                    // onClose={() => setIsSchoolModalOpen(false)} 
-
-                    // ✅ แก้เป็น (ถูก): สั่งปิดตัวแปร isEditingHeader ที่คุม Modal นี้อยู่
                     onClose={() => {
                       setIsEditingHeader(null);
                       setEditingHeaderKey(null);
@@ -575,7 +637,7 @@ export default function SchedulePage() {
                   />
                 )}
                 
-                {activeTab === 'room' && (
+                {activeTab === 'room' && activeSheet && (
                 <RoomTab 
                     activeSheet={activeSheet}
                     handleAddRoom={handleAddRoom}
@@ -584,7 +646,6 @@ export default function SchedulePage() {
                       const room = activeSheet.rooms.find(r => r.id === id);
                       openDeleteModal('room', id, room?.name || '');
                     }}
-                    getSheetByRoomId={getSheetByRoomId}
                     onOpenAddRoomModal={() => {
                       setEditingRoom(null);
                       setIsAddRoomModalOpen(true);
@@ -605,18 +666,14 @@ export default function SchedulePage() {
           setEditingRoom(null);
         }}
         onSave={handleAddRoom}
-        allRooms={allRooms}
-        getSheetByRoomId={getSheetByRoomId}
         editingRoom={editingRoom}
-        onSelectRoom={(roomId) => {
-          setSelectedRoomId(roomId);
-          const roomSheet = getSheetByRoomId(roomId);
-          if (roomSheet) {
-            setActiveSheetId(roomSheet.id);
-          }
-          setIsAddRoomModalOpen(false);
-          setEditingRoom(null);
-        }}
+      />
+
+      {/* Modal สำหรับสร้างตารางเรียน */}
+      <CreateScheduleModal
+        isOpen={isCreateScheduleModalOpen}
+        onClose={() => setIsCreateScheduleModalOpen(false)}
+        onCreateSchedule={handleCreateSchedule}
       />
 
       {/* Modal สำหรับเพิ่ม/แก้ไขวิชา */}
@@ -652,12 +709,14 @@ export default function SchedulePage() {
           deleteModal.type === 'subject' ? 'ยืนยันการลบวิชา' :
           deleteModal.type === 'teacher' ? 'ยืนยันการลบอาจารย์' :
           deleteModal.type === 'room' ? 'ยืนยันการลบห้องเรียน' :
+          deleteModal.type === 'schedule' ? 'ยืนยันการลบตารางเรียน' :
           'ยืนยันการลบ'
         }
         message={
           deleteModal.type === 'subject' ? 'คุณแน่ใจหรือไม่ว่าต้องการลบวิชานี้?' :
           deleteModal.type === 'teacher' ? 'คุณแน่ใจหรือไม่ว่าต้องการลบอาจารย์คนนี้?' :
           deleteModal.type === 'room' ? 'คุณแน่ใจหรือไม่ว่าต้องการลบห้องเรียนนี้? การลบจะลบตารางเรียนที่เกี่ยวข้องด้วย' :
+          deleteModal.type === 'schedule' ? 'คุณแน่ใจหรือไม่ว่าต้องการลบตารางเรียนนี้?' :
           'คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?'
         }
         itemName={deleteModal.name || undefined}

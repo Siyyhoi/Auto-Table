@@ -1,6 +1,9 @@
+// ../app/api/schedule/hooks/multischedule.ts
+
 "use client";
-import { useState, useEffect } from 'react';
-import { ScheduleSheet, ClassSlot, Subject, Teacher, Room, SchoolInfo, PeriodConfig, DayConfig } from '../type/schedule';
+import { useState, useEffect, useRef } from 'react';
+import { ScheduleSheet, ClassSlot, Subject, Teacher, Room, SchoolInfo, PeriodConfig, DayConfig, SubTeacher } from '../type/schedule';
+import { getUserSchedules, saveUserSchedules, getUserScheduleConfig, saveUserScheduleConfig } from '../actions/actions';
 
 const STORAGE_KEY = 'my_thai_schedules';
 
@@ -59,119 +62,332 @@ function generatePeriodConfigsFromSchoolInfo(schoolInfo: SchoolInfo): PeriodConf
   return configs.length > 0 ? configs : DEFAULT_PERIODS;
 }
 
-export function useMultiSchedule() {
+export function useMultiSchedule(userId: number | null) {
   const [sheets, setSheets] = useState<ScheduleSheet[]>([]);
   const [activeSheetId, setActiveSheetId] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  
+  // เพิ่ม State สำหรับสถานะการเซฟ
+  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error' | 'unsaved'>('saved');
 
-  // 1. Load Data
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        // Migrate old data format to new format
-        const migrated = parsed.map((sheet: any) => {
-          if (!sheet.subjects) {
-            const schoolInfo = sheet.schoolInfo || DEFAULT_SCHOOL_INFO;
-            return {
-              ...sheet,
-              subjects: [],
-              teachers: [],
-              rooms: [],
-              schoolInfo: { ...schoolInfo, startTime: schoolInfo.startTime || DEFAULT_SCHOOL_INFO.startTime, endTime: schoolInfo.endTime || DEFAULT_SCHOOL_INFO.endTime, minutesPerPeriod: schoolInfo.minutesPerPeriod || DEFAULT_SCHOOL_INFO.minutesPerPeriod },
-              periodConfigs: sheet.periodConfigs || generatePeriodConfigsFromSchoolInfo(schoolInfo),
-              dayConfigs: sheet.dayConfigs || [...DEFAULT_DAYS],
-            };
-          }
-          // ถ้ามี schoolInfo แต่ไม่มี periodConfigs หรือ periodConfigs ไม่ตรงกับ schoolInfo ให้ generate ใหม่
-          if (sheet.schoolInfo && sheet.schoolInfo.startTime && sheet.schoolInfo.endTime) {
-            const generated = generatePeriodConfigsFromSchoolInfo(sheet.schoolInfo);
-            if (generated.length > 0 && (!sheet.periodConfigs || sheet.periodConfigs.length !== generated.length)) {
-              return {
-                ...sheet,
-                periodConfigs: generated
-              };
-            }
-          }
-          return sheet;
-        });
-        setSheets(migrated);
-        if (migrated.length > 0) {
-          setActiveSheetId(migrated[0].id);
-        } else {
-          // ถ้าไม่มีข้อมูลเลย ให้สร้างตารางแรกให้
-          const newSheet: ScheduleSheet = {
-            id: Date.now().toString(),
-            name: "ตารางเรียนของฉัน",
-            slots: [],
-            subjects: [],
-            teachers: [],
-            rooms: [],
-            schoolInfo: { ...DEFAULT_SCHOOL_INFO },
-            periodConfigs: generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO),
-            dayConfigs: [...DEFAULT_DAYS],
-          };
-          setSheets([newSheet]);
-          setActiveSheetId(newSheet.id);
-        }
-      } catch (e) {
-        console.error('Error parsing saved data:', e);
-        const newSheet: ScheduleSheet = {
-          id: Date.now().toString(),
-          name: "ตารางเรียนของฉัน",
-          slots: [],
-          subjects: [],
-          teachers: [],
-          rooms: [],
-          schoolInfo: { ...DEFAULT_SCHOOL_INFO },
-          periodConfigs: generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO),
-          dayConfigs: [...DEFAULT_DAYS],
-        };
-        setSheets([newSheet]);
-        setActiveSheetId(newSheet.id);
-      }
-    } else {
-      // ถ้าไม่มีข้อมูลเลย ให้สร้างตารางแรกให้
-      const newSheet: ScheduleSheet = {
-        id: Date.now().toString(),
-        name: "ตารางเรียนของฉัน",
-        slots: [],
-        subjects: [],
-        teachers: [],
-        rooms: [],
-        schoolInfo: { ...DEFAULT_SCHOOL_INFO },
-        periodConfigs: generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO),
-        dayConfigs: [...DEFAULT_DAYS],
-      };
-      setSheets([newSheet]);
-      setActiveSheetId(newSheet.id);
-    }
-    setIsLoaded(true);
-  }, []);
-
-  // 2. Save Data
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sheets));
-    }
-  }, [sheets, isLoaded]);
-
-  // สร้างตารางใหม่ (Sheet ใหม่)
-  const createSheet = (name: string) => {
+  // Helper สำหรับสร้างชีทแรก
+  const initDefaultSheet = () => {
     const newSheet: ScheduleSheet = {
       id: Date.now().toString(),
-      name: name,
+      name: "ตารางเรียนของฉัน",
       slots: [],
       subjects: [],
       teachers: [],
+      subTeachers: [],
+      rooms: [],
+      schoolInfo: { ...DEFAULT_SCHOOL_INFO },
+      periodConfigs: generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO),
+      dayConfigs: [...DEFAULT_DAYS],
+    };
+    setSheets([newSheet]);
+    setActiveSheetId(newSheet.id);
+  };
+
+  // 1. Load Data (โหลดจาก localStorage เป็นหลัก, DB เป็น backup)
+  useEffect(() => {
+    async function loadData() {
+      // โหลดจาก localStorage ก่อน (เป็นหลัก)
+      const localSaved = localStorage.getItem(STORAGE_KEY);
+      let loadedSheets: ScheduleSheet[] | null = null;
+
+      if (localSaved) {
+        try {
+          loadedSheets = JSON.parse(localSaved);
+        } catch (e) {
+          console.error('Error parsing local storage:', e);
+        }
+      }
+
+      // ถ้า localStorage ว่าง และมี userId ให้ลองโหลดจาก DB
+      if (!loadedSheets && userId) {
+        loadedSheets = await getUserSchedules(userId);
+        
+        // ถ้าโหลดจาก DB ได้ ให้บันทึกลง localStorage ด้วย
+        if (loadedSheets) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(loadedSheets));
+        }
+      }
+
+      // ถ้ามี userId ให้โหลด config จาก DB เพื่อ sync
+      if (userId && loadedSheets) {
+        const dbConfig = await getUserScheduleConfig(userId);
+        if (dbConfig) {
+          // Merge config จาก DB เข้ากับ sheets
+          loadedSheets = loadedSheets.map(sheet => ({
+            ...sheet,
+            schoolInfo: dbConfig.schoolInfo,
+            periodConfigs: dbConfig.periodConfigs,
+            dayConfigs: dbConfig.dayConfigs,
+          }));
+        }
+      }
+
+      if (loadedSheets) {
+        // --- Migration Logic เดิมของคุณ ---
+        try {
+          const migrated = loadedSheets.map((sheet: any) => {
+            if (!sheet.subjects) {
+              const schoolInfo = sheet.schoolInfo || DEFAULT_SCHOOL_INFO;
+              return {
+                ...sheet,
+                subjects: [],
+                teachers: [],
+                subTeachers: [],
+                rooms: [],
+                schoolInfo: { ...schoolInfo, startTime: schoolInfo.startTime || DEFAULT_SCHOOL_INFO.startTime, endTime: schoolInfo.endTime || DEFAULT_SCHOOL_INFO.endTime, minutesPerPeriod: schoolInfo.minutesPerPeriod || DEFAULT_SCHOOL_INFO.minutesPerPeriod },
+                periodConfigs: sheet.periodConfigs || generatePeriodConfigsFromSchoolInfo(schoolInfo),
+                dayConfigs: sheet.dayConfigs || [...DEFAULT_DAYS],
+              };
+            }
+            
+            // เพิ่ม subTeachers ถ้ายังไม่มี
+            if (!sheet.subTeachers) {
+              sheet.subTeachers = [];
+            }
+            
+            // Migrate teachers: แปลง name เป็น first_name, last_name ถ้ายังไม่มี
+            if (sheet.teachers && Array.isArray(sheet.teachers)) {
+              sheet.teachers = sheet.teachers.map((teacher: any) => {
+                // ถ้ามี name แต่ไม่มี first_name, last_name ให้แยก
+                if (teacher.name && !teacher.first_name && !teacher.last_name) {
+                  const nameParts = teacher.name.trim().split(/\s+/);
+                  const title = nameParts[0].match(/^(ดร\.|ผศ\.|รศ\.|ศ\.|อ\.|อาจารย์)$/) ? nameParts[0] : undefined;
+                  const startIdx = title ? 1 : 0;
+                  const first_name = nameParts[startIdx] || '';
+                  const last_name = nameParts.slice(startIdx + 1).join(' ') || '';
+                  const full_name = [title, first_name, last_name].filter(Boolean).join(' ');
+                  
+                  return {
+                    ...teacher,
+                    title,
+                    first_name,
+                    last_name,
+                    full_name: full_name || teacher.name,
+                    max_hours_per_week: teacher.max_hours_per_week ?? undefined,
+                    unavailable_times: teacher.unavailable_times || [],
+                    weekend_available: teacher.weekend_available ?? undefined,
+                    availableRooms: teacher.availableRooms || [],
+                  };
+                }
+                // ถ้ามี first_name, last_name แล้ว
+                return {
+                  ...teacher,
+                  full_name: teacher.full_name || [teacher.title, teacher.first_name, teacher.last_name].filter(Boolean).join(' '),
+                  max_hours_per_week: teacher.max_hours_per_week ?? undefined,
+                  unavailable_times: teacher.unavailable_times || [],
+                  weekend_available: teacher.weekend_available ?? undefined,
+                  availableRooms: teacher.availableRooms || [],
+                };
+              });
+            }
+            // ถ้ามี schoolInfo แต่ไม่มี periodConfigs หรือ periodConfigs ไม่ตรงกับ schoolInfo ให้ generate ใหม่
+            if (sheet.schoolInfo && sheet.schoolInfo.startTime && sheet.schoolInfo.endTime) {
+              const generated = generatePeriodConfigsFromSchoolInfo(sheet.schoolInfo);
+              if (generated.length > 0 && (!sheet.periodConfigs || sheet.periodConfigs.length !== generated.length)) {
+                return {
+                  ...sheet,
+                  periodConfigs: generated
+                };
+              }
+            }
+            
+            // Migrate subjects: เพิ่มฟิลด์ใหม่ถ้ายังไม่มี
+            if (sheet.subjects && Array.isArray(sheet.subjects)) {
+              sheet.subjects = sheet.subjects.map((subject: any) => ({
+                ...subject,
+                name_en: subject.name_en || subject.name || '', // ถ้าไม่มี name_en ให้ใช้ name
+                lecture_hours: subject.lecture_hours ?? undefined,
+                lab_hours: subject.lab_hours ?? undefined,
+                total_hours: subject.total_hours ?? undefined,
+                labRoomId: subject.labRoomId || undefined,
+              }));
+            }
+            
+            // Migrate rooms: เพิ่ม room_type ถ้ายังไม่มี
+            if (sheet.rooms && Array.isArray(sheet.rooms)) {
+              sheet.rooms = sheet.rooms.map((room: any) => ({
+                ...room,
+                room_type: room.room_type || 'ห้องเรียน', // default เป็น 'ห้องเรียน'
+                capacity: room.capacity ?? undefined,
+              }));
+            }
+            
+            // Migrate: ลบ roomId และเพิ่ม grade ถ้ามี roomId เก่า
+            if (sheet.roomId && !sheet.grade) {
+              // ถ้ามี roomId เก่า ให้ลบออก (ไม่ต้องแปลงเป็น grade)
+              delete sheet.roomId;
+            }
+            // ตรวจสอบว่าไม่มี roomId แล้ว
+            if (sheet.roomId) {
+              delete sheet.roomId;
+            }
+            
+            return sheet;
+          });
+          
+          setSheets(migrated);
+          if (migrated.length > 0) {
+            setActiveSheetId(migrated[0].id);
+          } else {
+            initDefaultSheet();
+          }
+        } catch (e) {
+          console.error('Error parsing:', e);
+          initDefaultSheet();
+        }
+      } else {
+        initDefaultSheet();
+      }
+      setIsLoaded(true);
+    }
+    loadData();
+  }, [userId]); // รันใหม่เมื่อ userId เปลี่ยน
+
+  // 2. Save to localStorage (ทันที - เป็นหลัก)
+  useEffect(() => {
+    if (!isLoaded) return;
+    
+    // บันทึกลง localStorage ทันที (เพื่อไม่ให้ฐานข้อมูลเต็ม)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sheets));
+  }, [sheets, isLoaded]);
+
+  // 3. Auto-Save to DB Logic (Debounce + Periodic)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastConfigRef = useRef<{ schoolInfo: SchoolInfo; periodConfigs: PeriodConfig[]; dayConfigs: DayConfig[] } | null>(null);
+
+  useEffect(() => {
+    // อย่าเพิ่งเซฟถ้ายังโหลดไม่เสร็จ หรือ ไม่มี User
+    if (!isLoaded || !userId) {
+      if (!isLoaded) console.log('Auto-save: Waiting for data to load...');
+      if (!userId) console.log('Auto-save: No userId provided, skipping save');
+      return;
+    }
+
+    console.log('Auto-save: Sheets changed, setting status to unsaved');
+    setSaveStatus('unsaved'); // ทันทีที่ sheets เปลี่ยน สถานะคือยังไม่เซฟ
+
+    // ตรวจสอบว่า config เปลี่ยนหรือไม่
+    const activeSheet = sheets.find(s => s.id === activeSheetId);
+    const currentConfig = activeSheet ? {
+      schoolInfo: activeSheet.schoolInfo,
+      periodConfigs: activeSheet.periodConfigs,
+      dayConfigs: activeSheet.dayConfigs,
+    } : null;
+
+    const configChanged = !lastConfigRef.current || 
+      JSON.stringify(lastConfigRef.current) !== JSON.stringify(currentConfig);
+
+    // เคลียร์ timer เก่า (ถ้ามีการพิมพ์ต่อเนื่อง)
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+    // Debounce: ตั้ง timer ใหม่ (หน่วงเวลา 3 วินาที)
+    timeoutRef.current = setTimeout(async () => {
+      console.log('Auto-save: Starting save to DB...', { userId, sheetsCount: sheets.length });
+      setSaveStatus('saving');
+      
+      try {
+        // ถ้า config เปลี่ยน ให้เซฟ config ก่อน (เบากว่า)
+        if (configChanged && currentConfig) {
+          console.log('Auto-save: Saving config...');
+          const configResult = await saveUserScheduleConfig(userId, currentConfig);
+          if (configResult.success) {
+            lastConfigRef.current = currentConfig;
+            console.log('✅ Config saved to DB');
+          } else {
+            console.error('❌ Config save failed:', configResult.error);
+          }
+        }
+
+        // เซฟข้อมูลทั้งหมดลง DB (หน่วงเวลานานกว่า)
+        console.log('Auto-save: Saving all sheets to DB...', { sheetsCount: sheets.length });
+        const result = await saveUserSchedules(userId, sheets);
+        
+        if (result.success) {
+          setSaveStatus('saved');
+          console.log('✅ Auto-saved to DB successfully', { sheetsCount: sheets.length });
+        } else {
+          setSaveStatus('error');
+          console.error('❌ Save error:', result.error);
+        }
+      } catch (error) {
+        setSaveStatus('error');
+        console.error('❌ Save error:', error);
+      }
+    }, 3000); // 3000ms = 3 วินาที
+
+    // Cleanup function
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [sheets, isLoaded, userId, activeSheetId]); // รันทุกครั้งที่ sheets เปลี่ยน
+
+  // Periodic Save: เซฟทุก 30 วินาที (เผื่อ debounce ไม่ทำงาน)
+  useEffect(() => {
+    if (!isLoaded || !userId) return;
+
+    intervalRef.current = setInterval(async () => {
+      if (saveStatus === 'unsaved' && sheets.length > 0) {
+        setSaveStatus('saving');
+        
+        try {
+          const activeSheet = sheets.find(s => s.id === activeSheetId);
+          const currentConfig = activeSheet ? {
+            schoolInfo: activeSheet.schoolInfo,
+            periodConfigs: activeSheet.periodConfigs,
+            dayConfigs: activeSheet.dayConfigs,
+          } : null;
+
+          // เซฟ config ถ้ามี
+          if (currentConfig) {
+            await saveUserScheduleConfig(userId, currentConfig);
+          }
+
+          // เซฟข้อมูลทั้งหมด
+          const result = await saveUserSchedules(userId, sheets);
+          if (result.success) {
+            setSaveStatus('saved');
+            console.log('Periodic save to DB');
+          }
+        } catch (error) {
+          console.error('Periodic save error:', error);
+        }
+      }
+    }, 30000); // 30 วินาที
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isLoaded, userId, saveStatus, sheets, activeSheetId]);
+
+  // สร้างตารางใหม่ (Sheet ใหม่) - แยกจากห้องเรียน
+  const createSheet = (name: string, grade?: string) => {
+    const newSheet: ScheduleSheet = {
+      id: Date.now().toString(),
+      name: name,
+      grade: grade || undefined,
+      slots: [],
+      subjects: [],
+      teachers: [],
+      subTeachers: [],
       rooms: [],
       schoolInfo: { ...DEFAULT_SCHOOL_INFO },
       periodConfigs: [...DEFAULT_PERIODS],
       dayConfigs: [...DEFAULT_DAYS],
     };
-    setSheets(prev => [...prev, newSheet]);
+    console.log('createSheet called:', { name, grade, newSheetId: newSheet.id });
+    setSheets(prev => {
+      const updated = [...prev, newSheet];
+      console.log('Sheets updated, count:', updated.length);
+      return updated;
+    });
     setActiveSheetId(newSheet.id);
+    console.log('Active sheet ID set to:', newSheet.id);
   };
 
   // ลบตาราง (Sheet)
@@ -260,80 +476,80 @@ export function useMultiSchedule() {
       return { 
         ...sheet, 
         teachers: sheet.teachers.filter(t => t.id !== teacherId),
+        subTeachers: sheet.subTeachers.filter(st => st.teacher_id !== teacherId),
         slots: sheet.slots.filter(s => s.teacherId !== teacherId)
       };
     }));
   };
 
-  // จัดการห้องเรียน
+  // จัดการ SubTeacher (ความสัมพันธ์ระหว่างอาจารย์และวิชา)
+  const addSubTeacher = (subTeacher: SubTeacher) => {
+    if (!activeSheetId) return;
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id !== activeSheetId) return sheet;
+      // ตรวจสอบว่ามีอยู่แล้วหรือไม่
+      const exists = sheet.subTeachers.find(st => 
+        st.teacher_id === subTeacher.teacher_id && st.subject_id === subTeacher.subject_id
+      );
+      if (exists) return sheet;
+      return { ...sheet, subTeachers: [...sheet.subTeachers, subTeacher] };
+    }));
+  };
+
+  const updateSubTeacher = (subTeacher: SubTeacher) => {
+    if (!activeSheetId) return;
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id !== activeSheetId) return sheet;
+      return { 
+        ...sheet, 
+        subTeachers: sheet.subTeachers.map(st => st.id === subTeacher.id ? subTeacher : st)
+      };
+    }));
+  };
+
+  const deleteSubTeacher = (subTeacherId: string) => {
+    if (!activeSheetId) return;
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id !== activeSheetId) return sheet;
+      return { 
+        ...sheet, 
+        subTeachers: sheet.subTeachers.filter(st => st.id !== subTeacherId)
+      };
+    }));
+  };
+
+  // ฟังก์ชัน helper: สร้าง SubTeacher จาก teacher และ subject
+  const createSubTeacher = (teacherId: string, subjectId: string): SubTeacher | null => {
+    const activeSheet = sheets.find(s => s.id === activeSheetId);
+    if (!activeSheet) return null;
+
+    const teacher = activeSheet.teachers.find(t => t.id === teacherId);
+    const subject = activeSheet.subjects.find(s => s.id === subjectId);
+
+    if (!teacher || !subject) return null;
+
+    return {
+      id: `subteacher-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      teacher_id: teacherId,
+      teacher_name: teacher.full_name || `${teacher.first_name} ${teacher.last_name}`,
+      subject_id: subjectId,
+      subject_name: subject.name
+    };
+  };
+
+  // จัดการห้องเรียน - เพิ่มแค่ Room ไปใน rooms array (ไม่สร้างตารางอัตโนมัติ)
   const addRoom = (room: Room) => {
     if (!activeSheetId) return;
     
-    setSheets(prev => {
-      // หาตารางหลัก (activeSheet) เพื่อ copy schoolInfo และ periodConfigs
-      const mainSheet = prev.find(s => s.id === activeSheetId);
-      
-      // หาตารางอื่นที่มีข้อมูลโรงเรียนที่ตั้งค่าแล้ว (มี startTime และ endTime และ name ไม่ว่าง หรือมี startTime/endTime)
-      // ให้ priority ห้องที่มี roomId ก่อน (ห้องเรียน) แล้วค่อยหาตารางหลัก
-      const sheetWithSchoolInfo = prev.find(s => 
-        s.schoolInfo?.startTime && 
-        s.schoolInfo?.endTime && 
-        s.schoolInfo.startTime !== '--:--' && 
-        s.schoolInfo.endTime !== '--:--' &&
-        s.schoolInfo.startTime !== '' &&
-        s.schoolInfo.endTime !== ''
-      ) || prev.find(s => 
-        s.schoolInfo?.startTime && 
-        s.schoolInfo?.endTime
-      );
-      
-      // ใช้ข้อมูลจากตารางที่มีข้อมูลแล้ว หรือจากตารางหลัก หรือค่า default
-      let sourceSchoolInfo: SchoolInfo;
-      if (sheetWithSchoolInfo?.schoolInfo?.startTime && sheetWithSchoolInfo?.schoolInfo?.endTime) {
-        // ใช้จากตารางที่มีข้อมูลแล้ว
-        sourceSchoolInfo = { ...sheetWithSchoolInfo.schoolInfo };
-      } else if (mainSheet?.schoolInfo?.startTime && mainSheet?.schoolInfo?.endTime) {
-        // ใช้จากตารางหลัก
-        sourceSchoolInfo = { ...mainSheet.schoolInfo };
-      } else {
-        // ใช้ค่า default
-        sourceSchoolInfo = { ...DEFAULT_SCHOOL_INFO };
-      }
-      
-      // Generate periodConfigs จาก schoolInfo
-      let sourcePeriodConfigs: PeriodConfig[];
-      if (sourceSchoolInfo.startTime && sourceSchoolInfo.endTime && sourceSchoolInfo.minutesPerPeriod) {
-        sourcePeriodConfigs = generatePeriodConfigsFromSchoolInfo(sourceSchoolInfo);
-      } else {
-        // ใช้ periodConfigs จากตารางที่มีข้อมูลแล้ว หรือจากตารางหลัก
-        sourcePeriodConfigs = sheetWithSchoolInfo?.periodConfigs || 
-                              mainSheet?.periodConfigs || 
-                              generatePeriodConfigsFromSchoolInfo(DEFAULT_SCHOOL_INFO);
-      }
-      
-      // สร้างตารางเรียนใหม่สำหรับห้องนี้ (copy schoolInfo และ periodConfigs)
-      const newSheet: ScheduleSheet = {
-        id: Date.now().toString(),
-        name: `ตารางเรียน - ${room.name}`,
-        roomId: room.id,
-        slots: [],
-        subjects: [],
-        teachers: [],
-        rooms: [room], // เก็บห้องไว้ในตารางนี้ด้วย
-        schoolInfo: { ...sourceSchoolInfo },
-        periodConfigs: [...sourcePeriodConfigs],
-        dayConfigs: [...DEFAULT_DAYS],
-      };
-      
-      // เพิ่มห้องในตารางปัจจุบัน (สำหรับการจัดการทั่วไป)
-      const updatedSheets = prev.map(sheet => {
-        if (sheet.id !== activeSheetId) return sheet;
-        return { ...sheet, rooms: [...sheet.rooms, room] };
-      });
-      // เพิ่มตารางเรียนใหม่สำหรับห้องนี้
-      return [...updatedSheets, newSheet];
-    });
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id !== activeSheetId) return sheet;
+      // ตรวจสอบว่ามีห้องนี้อยู่แล้วหรือไม่
+      const roomExists = sheet.rooms.find(r => r.id === room.id);
+      if (roomExists) return sheet;
+      return { ...sheet, rooms: [...sheet.rooms, room] };
+    }));
   };
+
 
   const updateRoom = (room: Room) => {
     if (!activeSheetId) return;
@@ -345,28 +561,14 @@ export function useMultiSchedule() {
 
   const deleteRoom = (roomId: string) => {
     if (!activeSheetId) return;
-    setSheets(prev => {
-      // ลบห้องจากตารางปัจจุบัน
-      const updatedSheets = prev.map(sheet => {
-        if (sheet.id !== activeSheetId) return sheet;
-        return { 
-          ...sheet, 
-          rooms: sheet.rooms.filter(r => r.id !== roomId),
-          slots: sheet.slots.filter(s => s.roomId !== roomId)
-        };
-      });
-      // ลบตารางเรียนที่เชื่อมกับห้องนี้
-      const filteredSheets = updatedSheets.filter(sheet => sheet.roomId !== roomId);
-      
-      // ถ้าตารางที่กำลังเปิดอยู่ถูกลบ ให้เปลี่ยนไปตารางอื่น
-      if (filteredSheets.length > 0 && !filteredSheets.find(s => s.id === activeSheetId)) {
-        setActiveSheetId(filteredSheets[0].id);
-      } else if (filteredSheets.length === 0) {
-        setActiveSheetId(null);
-      }
-      
-      return filteredSheets;
-    });
+    setSheets(prev => prev.map(sheet => {
+      if (sheet.id !== activeSheetId) return sheet;
+      return { 
+        ...sheet, 
+        rooms: sheet.rooms.filter(r => r.id !== roomId),
+        slots: sheet.slots.filter(s => s.roomId !== roomId)
+      };
+    }));
   };
 
   // อัปเดตข้อมูลโรงเรียน - อัปเดตทุกตารางให้เหมือนกันทั้งหมด
@@ -439,10 +641,6 @@ export function useMultiSchedule() {
     });
   };
 
-  // ดึงตารางที่เชื่อมกับห้อง
-  const getSheetByRoomId = (roomId: string): ScheduleSheet | undefined => {
-    return sheets.find(s => s.roomId === roomId);
-  };
 
   return { 
     sheets, 
@@ -459,6 +657,10 @@ export function useMultiSchedule() {
     addTeacher,
     updateTeacher,
     deleteTeacher,
+    addSubTeacher,
+    updateSubTeacher,
+    deleteSubTeacher,
+    createSubTeacher,
     addRoom,
     updateRoom,
     deleteRoom,
@@ -466,8 +668,8 @@ export function useMultiSchedule() {
     updatePeriodConfig,
     updateDayConfig,
     getAllRooms,
-    getSheetByRoomId,
     setPeriodConfigs,
-    isLoaded 
+    isLoaded,
+    saveStatus
   };
 }

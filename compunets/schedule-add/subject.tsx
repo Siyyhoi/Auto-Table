@@ -19,7 +19,7 @@ export default function SubjectTab({
 }: SubjectTabProps) {
   // ฟังก์ชันสำหรับหา teacher name จาก id
   function getTeacherName(teacherId?: string): string {
-    return teachers.find(t => t.id === teacherId)?.name || '';
+    return teachers.find(t => t.id === teacherId)?.full_name || '';
   }
   return (
     <div>

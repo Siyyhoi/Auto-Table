@@ -42,7 +42,7 @@ export default function ConfirmDeleteModal({
           onClick={onClose}
         >
           <motion.div 
-            variants={modalVar}
+            variants={modalVar as any}
             initial="hidden"
             animate="visible"
             exit="exit"

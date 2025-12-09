@@ -7,7 +7,6 @@ interface RoomTabProps {
   handleAddRoom: (room: Room) => void;
   handleEditRoom: (room: Room) => void;
   deleteRoom: (id: string) => void;
-  getSheetByRoomId?: (roomId: string) => any;
   onOpenAddRoomModal?: () => void;
 }
 
@@ -16,7 +15,6 @@ export default function RoomTab({
   handleAddRoom,
   handleEditRoom,
   deleteRoom,
-  getSheetByRoomId,
   onOpenAddRoomModal
 }: RoomTabProps) {
   return (
@@ -33,21 +31,17 @@ export default function RoomTab({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {activeSheet.rooms.map((room: Room) => {
-          const hasSchedule = getSheetByRoomId && getSheetByRoomId(room.id);
           return (
             <div key={room.id} className="border p-3 rounded flex justify-between items-center">
               <div>
-                <div className="font-bold text-black flex items-center gap-2">
+                <div className="font-bold text-black">
                   {room.name}
-                  {hasSchedule && (
-                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                      📅 มีตารางเรียน
-                    </span>
-                  )}
                 </div>
-                {room.capacity && (
-                  <div className="text-sm text-black">ความจุ: {room.capacity} คน</div>
-                )}
+                <div className="text-sm text-gray-600 mt-1">
+                  {room.room_type && <span>ประเภท: {room.room_type}</span>}
+                  {room.capacity && room.room_type && <span className="mx-2">•</span>}
+                  {room.capacity && <span>ความจุ: {room.capacity} คน</span>}
+                </div>
               </div>
 
               <div className="flex items-center gap-2">
@@ -73,7 +67,7 @@ export default function RoomTab({
       
       {activeSheet.rooms.length === 0 && (
         <div className="text-center py-8 text-gray-500">
-          ยังไม่มีห้องเรียน กรุณาเพิ่มห้องเรียนเพื่อสร้างตารางเรียน
+          ยังไม่มีห้องเรียน
         </div>
       )}
     </div>

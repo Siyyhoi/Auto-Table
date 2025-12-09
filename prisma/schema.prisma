@@ -20,6 +20,7 @@ model Users{
     email         String  @unique
     role          String?
     permission    Permissions? @relation(fields: [role], references: [permission_name])
+    schedules Schedules[]
 }
 
 model Permissions{
@@ -27,6 +28,17 @@ model Permissions{
     permission_name String @unique
     allow_pages     Json
     users           Users[]
+}
+
+model Schedules {
+  id          String   @id @default(uuid()) // ใช้ UUID ให้ตรงกับ type ของคุณ
+  name        String
+  // พระเอกของเรา: เก็บข้อมูล ScheduleSheet ทั้งก้อน (รวม teachers, rooms, slots)
+  data        Json     
+  userId      Int
+  user        Users    @relation(fields: [userId], references: [user_id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 //npx prisma generate สำหรับรีฐานช้อมูล

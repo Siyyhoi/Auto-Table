@@ -30,11 +30,11 @@ export default function TeacherTab({
         </button>
       </div>
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {activeSheet.teachers.map(teacher => (
           <div key={teacher.id} className="border p-4 rounded">
             <div className="flex justify-between items-center mb-2">
-              <div className="font-bold text-lg text-black">{teacher.name}</div>
+              <div className="font-bold text-lg text-black">{teacher.full_name}</div>
 
               <div className="flex items-center gap-2">
                 <button
@@ -54,8 +54,8 @@ export default function TeacherTab({
               </div>
             </div>
 
-            <div className="mt-2">
-              <div className="text-sm font-medium mb-2">ห้องที่สอนได้:</div>
+            {/* <div className="mt-2">
+              <div className="text-sm font-medium mb-2 text-black">ห้องที่สอนได้:</div>
 
               <div className="flex flex-wrap gap-2">
                 {activeSheet.rooms.map(room => (
@@ -72,8 +72,7 @@ export default function TeacherTab({
                   </button>
                 ))}
               </div>
-
-            </div>
+            </div> */}
           </div>
         ))}
       </div>

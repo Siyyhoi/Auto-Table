@@ -17,7 +17,7 @@ interface AddSubjectModalProps {
 
 const modalVar = {
   hidden: { opacity: 0, scale: 0.8 },
-  visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 25 } },
+  visible: { opacity: 1, scale: 1, transition: { type: "spring" as const, stiffness: 300, damping: 25 } },
   exit: { opacity: 0, scale: 0.8, transition: { duration: 0.2 } }
 };
 
@@ -32,23 +32,50 @@ export default function AddSubjectModal({
   
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
+  const [nameEn, setNameEn] = useState('');
+  const [lectureHours, setLectureHours] = useState<number | ''>('');
+  const [labHours, setLabHours] = useState<number | ''>('');
+  const [totalHours, setTotalHours] = useState<number | ''>('');
   const [teacherId, setTeacherId] = useState('');
   const [roomId, setRoomId] = useState('');
+  const [labRoomId, setLabRoomId] = useState('');
 
   // เมื่อ editingSubject เปลี่ยน ให้โหลดข้อมูลเข้า form
   React.useEffect(() => {
     if (editingSubject) {
       setCode(editingSubject.code);
       setName(editingSubject.name);
+      setNameEn(editingSubject.name_en || '');
+      setLectureHours(editingSubject.lecture_hours ?? '');
+      setLabHours(editingSubject.lab_hours ?? '');
+      setTotalHours(editingSubject.total_hours ?? '');
       setTeacherId(editingSubject.teacherId || '');
       setRoomId(editingSubject.roomId || '');
+      setLabRoomId(editingSubject.labRoomId || '');
     } else {
       setCode('');
       setName('');
+      setNameEn('');
+      setLectureHours('');
+      setLabHours('');
+      setTotalHours('');
       setTeacherId('');
       setRoomId('');
+      setLabRoomId('');
     }
   }, [editingSubject, isOpen]);
+
+  // คำนวณ total_hours อัตโนมัติ
+  React.useEffect(() => {
+    const lecture = typeof lectureHours === 'number' ? lectureHours : 0;
+    const lab = typeof labHours === 'number' ? labHours : 0;
+    const total = lecture + lab;
+    if (total > 0) {
+      setTotalHours(total);
+    } else if (lectureHours === '' && labHours === '') {
+      setTotalHours('');
+    }
+  }, [lectureHours, labHours]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,8 +85,13 @@ export default function AddSubjectModal({
       id: editingSubject?.id || `subject-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       code: code.trim(),
       name: name.trim(),
+      name_en: nameEn.trim() || name.trim(), // ถ้าไม่มี name_en ให้ใช้ name แทน
+      lecture_hours: typeof lectureHours === 'number' ? lectureHours : undefined,
+      lab_hours: typeof labHours === 'number' ? labHours : undefined,
+      total_hours: typeof totalHours === 'number' ? totalHours : undefined,
       teacherId: teacherId || undefined,
       roomId: roomId || undefined,
+      labRoomId: labRoomId || undefined,
       color: editingSubject?.color || `bg-${['blue', 'green', 'purple', 'pink', 'yellow', 'orange'][Math.floor(Math.random() * 6)]}-500`
     };
 
@@ -70,8 +102,13 @@ export default function AddSubjectModal({
   const handleClose = () => {
     setCode('');
     setName('');
+    setNameEn('');
+    setLectureHours('');
+    setLabHours('');
+    setTotalHours('');
     setTeacherId('');
     setRoomId('');
+    setLabRoomId('');
     onClose();
   };
 
@@ -119,7 +156,7 @@ export default function AddSubjectModal({
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   placeholder="เช่น CS101"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition text-black"
                   required
                   autoFocus
                 />
@@ -127,49 +164,119 @@ export default function AddSubjectModal({
 
               {/* NAME Input */}
               <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">ชื่อวิชา <span className="text-red-500">*</span></label>
+                <label className="text-sm font-medium text-gray-700">ชื่อวิชา (ไทย) <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="เช่น วิทยาการคอมพิวเตอร์"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition text-black"
                   required
                 />
               </div>
 
-              {/* GRID: Teacher & Room */}
+              {/* NAME_EN Input */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">ชื่อวิชา (อังกฤษ)</label>
+                <input
+                  type="text"
+                  value={nameEn}
+                  onChange={(e) => setNameEn(e.target.value)}
+                  placeholder="เช่น Computer Science"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition text-black"
+                />
+              </div>
+
+              {/* HOURS Inputs */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700">ชั่วโมงบรรยาย</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={lectureHours}
+                    onChange={(e) => setLectureHours(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition text-black"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700">ชั่วโมงปฏิบัติการ</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={labHours}
+                    onChange={(e) => setLabHours(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition text-black"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-gray-700">ชั่วโมงรวม</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={totalHours}
+                    onChange={(e) => setTotalHours(e.target.value === '' ? '' : Number(e.target.value))}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 bg-gray-50 hover:bg-white transition bg-gray-100 text-black"
+                    readOnly
+                  />
+                </div>
+              </div>
+
+              {/* SELECT TEACHER */}
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">อาจารย์</label>
+                <div className="relative">
+                  <select
+                    value={teacherId}
+                    onChange={(e) => setTeacherId(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 appearance-none bg-gray-50 hover:bg-white transition text-black"
+                  >
+                    <option value="">ไม่ระบุ</option>
+                    {teachers.map((teacher) => (
+                      <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
+                </div>
+              </div>
+
+              {/* GRID: Lecture Room & Lab Room */}
               <div className="grid grid-cols-2 gap-3">
                 
-                {/* SELECT TEACHER */}
+                {/* SELECT LECTURE ROOM */}
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">อาจารย์</label>
+                  <label className="text-sm font-medium text-gray-700">ห้องบรรยาย</label>
                   <div className="relative">
                     <select
-                      value={teacherId}
-                      onChange={(e) => setTeacherId(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 appearance-none bg-gray-50 hover:bg-white transition"
+                      value={roomId}
+                      onChange={(e) => setRoomId(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 appearance-none bg-gray-50 hover:bg-white transition text-black"
                     >
                       <option value="">ไม่ระบุ</option>
-                      {teachers.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                      {rooms.filter(room => room.room_type === 'ห้องเรียน' || !room.room_type?.includes('Lab')).map((room) => (
+                        <option key={room.id} value={room.id}>
+                          {room.name}
+                        </option>
                       ))}
                     </select>
                     <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
                   </div>
                 </div>
 
-                {/* SELECT ROOM */}
+                {/* SELECT LAB ROOM */}
                 <div className="space-y-1">
-                  <label className="text-sm font-medium text-gray-700">ห้องเรียน</label>
+                  <label className="text-sm font-medium text-gray-700">ห้องปฏิบัติการ</label>
                   <div className="relative">
                     <select
-                      value={roomId}
-                      onChange={(e) => setRoomId(e.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 appearance-none bg-gray-50 hover:bg-white transition"
+                      value={labRoomId}
+                      onChange={(e) => setLabRoomId(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 appearance-none bg-gray-50 hover:bg-white transition text-black"
                     >
                       <option value="">ไม่ระบุ</option>
-                      {rooms.map((room) => (
+                      {rooms.filter(room => room.room_type?.includes('Lab') || room.name?.includes('Lab')).map((room) => (
                         <option key={room.id} value={room.id}>
                           {room.name}
                         </option>
@@ -186,14 +293,14 @@ export default function AddSubjectModal({
                 <motion.button
                   type="button"
                   onClick={handleClose}
-                  className="flex-1 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 transition"
+                  className="flex-1 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 transition text-black"
                 >
                   ยกเลิก
                 </motion.button>
                 <motion.button
                   type="submit"
                   disabled={!code.trim() || !name.trim()}
-                  className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50"
+                  className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition disabled:opacity-50 text-black"
                 >
                   บันทึก
                 </motion.button>

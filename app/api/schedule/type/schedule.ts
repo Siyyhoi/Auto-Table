@@ -12,21 +12,47 @@ export interface ClassSlot {
 export interface Subject {
   id: string;        // ID ของวิชา
   code: string;      // รหัสวิชา
-  name: string;      // ชื่อวิชา
+  name: string;      // ชื่อวิชา (subject_name_th)
+  name_en: string;   // ชื่อวิชาในภาษาอังกฤษ (subject_name_en)
+  lecture_hours?: number;  // จำนวนชั่วโมงบรรยาย
+  lab_hours?: number;     // จำนวนชั่วโมงปฏิบัติการ
+  total_hours?: number;   // จำนวนชั่วโมงรวม
   color?: string;    // สีพื้นหลัง
   teacherId?: string;  // ID ของอาจารย์
-  roomId?: string;
+  roomId?: string;   // ID ของห้องบรรยาย (Lecture Room)
+  labRoomId?: string; // ID ของห้องปฏิบัติการ (Computer Lab, Network Lab, Business Lab, Multimedia Lab, Data/AI Lab)
 }
 
 export interface Teacher {
-  id: string;        // ID ของอาจารย์
-  name: string;      // ชื่ออาจารย์
+  id: string;        // ID ของอาจารย์ (teacher_id)
+  title?: string;   // คำนำหน้า (เช่น ดร., ผศ., อ.)
+  first_name: string; // ชื่อ
+  last_name: string; // นามสกุล
+  full_name?: string; // ชื่อเต็ม (คำนวณจาก title + first_name + last_name)
+  max_hours_per_week?: number; // ชั่วโมงสูงสุดต่อสัปดาห์
+  unavailable_times?: UnavailableTime[]; // เวลาที่ไม่ว่าง
+  weekend_available?: boolean; // สอนวันหยุดได้หรือไม่
   availableRooms: string[]; // รายการ ID ห้องที่สอนได้
+}
+
+export interface UnavailableTime {
+  day: string;      // วัน (Monday, Tuesday, ...)
+  period: number;    // คาบ (1-10)
+  reason?: string;   // เหตุผล (optional)
+}
+
+export interface SubTeacher {
+  id: string;        // ID ของความสัมพันธ์
+  teacher_id: string; // ID ของอาจารย์
+  teacher_name: string; // ชื่ออาจารย์
+  subject_id: string; // ID ของวิชา
+  subject_name: string; // ชื่อวิชา
 }
 
 export interface Room {
   id: string;        // ID ของห้อง
   name: string;      // ชื่อห้อง (เช่น "404", "Lab 1")
+  room_type: string; // ประเภทห้อง (เช่น "ห้องเรียน", "ห้องปฏิบัติการ")
   capacity?: number; // ความจุ
 }
 
@@ -53,11 +79,12 @@ export interface DayConfig {
 export interface ScheduleSheet {
   id: string;        // ID ของแผ่นตาราง
   name: string;      // ชื่อตาราง เช่น "ตารางเรียนเทอม 1"
-  roomId?: string;   // ID ของห้องเรียนที่ตารางนี้เป็นของ (ถ้ามี)
+  grade?: string;    // ชั้นเรียน เช่น "ม.1", "ม.2/1", "ป.4" (แยกจากห้องเรียน)
   slots: ClassSlot[]; // รายวิชาในตารางนี้
   subjects: Subject[]; // รายการวิชา
   teachers: Teacher[]; // รายการอาจารย์
-  rooms: Room[];     // รายการห้องเรียน (สำหรับห้องที่ไม่ได้เชื่อมกับตาราง)
+  subTeachers: SubTeacher[]; // ความสัมพันธ์ระหว่างอาจารย์และวิชา
+  rooms: Room[];     // รายการห้องเรียน (สำหรับการจัดการทั่วไป แยกจากตาราง)
   schoolInfo: SchoolInfo; // ข้อมูลโรงเรียน
   periodConfigs: PeriodConfig[]; // การตั้งค่าคาบ
   dayConfigs: DayConfig[]; // การตั้งค่าวัน
